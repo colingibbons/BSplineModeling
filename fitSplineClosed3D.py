@@ -248,9 +248,12 @@ for i in range(numCalcControlPointsU):
 # plot the surface
 ax.plot_surface(X, Y, Z)
 
-# display the combined plot
-plt.show()
+# read fat points from file and add them to the scene
+fatX, fatY, fatZ, numFatPointsPerSlice = splineTools.readSlicePoints(fatName, startFrame, stopFrame)
+ax.scatter(fatX, fatY, fatZ, s=4, c='yellow')
 
+# display plot with control point mesh, surface, and fat points
+plt.show()
 
 
 
