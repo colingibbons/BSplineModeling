@@ -1,13 +1,15 @@
 import numpy as np
+import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import time
 
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-startFrame = 3
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
+startFrame = 2
 stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
@@ -18,8 +20,6 @@ origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(fileName
 # do this by fitting each slice with B-spline curve
 resampleNumControlPoints = 7
 degree = 3
-# TODO the weird parabolic issue on the top layer seems to result from points that are relatively far in the x-y
-# TODO plane being "paired" in the z-plane. Probably due to number of points in the "crease" region
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 
@@ -174,7 +174,7 @@ maxZ = np.max(Vz)
 azimuth = -40
 elevation = 15
 
-# # if using the synthetic tube, set up number of points in each contour
+# # # if using the synthetic tube, set up number of points in each contour
 # numPointsEachContour = np.ones((1, numSlices)) * numPointsPerContour
 # origX = x
 # origY = y
@@ -191,6 +191,7 @@ ax.set_title('Original Data')
 
 for i in range(numSlices):
     limit = numPointsEachContour[i]
+    #limit = numPointsPerContour
     ax.plot(origX[i, 0:limit], origY[i, 0:limit], origZ[i, 0:limit])
 
 # plot the resampled data
@@ -250,10 +251,46 @@ ax.plot_surface(X, Y, Z)
 
 # read fat points from file and add them to the scene
 fatX, fatY, fatZ, numFatPointsPerSlice = splineTools.readSlicePoints(fatName, startFrame, stopFrame)
-ax.scatter(fatX, fatY, fatZ, s=4, c='yellow')
+ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
+
+# generate normal vectors
+# crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z)
+crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerContour, numSlices)
+#ax.quiver(X, Y, Z, crossX, crossY, crossZ, length=10, color='purple', arrow_length_ratio=0.1)
+
+# measure fat thickness at each normal vector
+# TODO deal with fact that a bunch of points will appear at (0, 0)
+thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
+                                                                           numPointsPerContour, numFatPointsPerSlice)
+
+#plot each normal vector one at a time along with the fat points associated with it
+for i in range(numSlices):
+    count = 0
+    for j in range(numPointsPerContour):
+        x = xFatPoints[i, j, :]
+        y = yFatPoints[i, j, :]
+        z = fatZ[i]
+        points = ax.scatter(xFatPoints[i, j, :], yFatPoints[i, j, :], fatZ[i], s=4, c='black')
+        pointX = X[i, j] + 100*crossX[i, j]
+        pointY = Y[i, j] + 100*crossY[i, j]
+        pointZ = Z[i, j]
+        points2 = ax.scatter(pointX, pointY, pointZ, marker='s', s=4, c='purple')
+        vector = ax.quiver(X[i, j], Y[i, j], Z[i, j], crossX[i, j], crossY[i, j], crossZ[i, j], length=10,
+                           color='purple', arrow_length_ratio=0.1)
+        count += 1
+        message = "Slice {}, Point {}: Fat thickness of {}".format(i, j, thicknessByPoint[i, j])
+        plt.title(message)
+        plt.draw()
+        plt.pause(0.5)
+        points.remove()
+        points2.remove()
+        vector.remove()
+    print(count)
 
 # display plot with control point mesh, surface, and fat points
 plt.show()
+
+
 
 
 

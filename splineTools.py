@@ -100,6 +100,7 @@ def NVal(tau, t, i, d, r):
 
     return N
 
+
 # This function evaluates the B-Spline series at points in the vector t
 def BSVal(b, tau, t, r):
 
@@ -335,3 +336,104 @@ def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, deg
         newZControl[i, :] = Z[i, 0]
 
     return newX, newY, newZ, newXControl, newYControl, newZControl, numPointsPerContour, totalError
+
+# this function generates normal vectors for points on the surface using the cross-product
+# TODO vectors generated for some cases are not actually normal to surface
+def generateNormalVectors(X, Y, Z):
+
+    g, f = np.shape(X)
+    crossX = np.zeros((g-1, f-1))
+    crossY = np.zeros((g-1, f-1))
+    crossZ = np.zeros((g-1, f-1))
+
+    for i in range(g - 1):
+        for j in range(f - 1):
+            # starting vector
+            vector1 = (X[i, j], Y[i, j], Z[i, j])
+            # u differential
+            vector2 = (X[i + 1, j], Y[i + 1, j], Z[i + 1, j])
+            uDer = np.subtract(vector2, vector1)
+            # v differential
+            vector3 = (X[i, j + 1], Y[i, j + 1], Z[i, j + 1])
+            vDer = np.subtract(vector3, vector1)
+
+            # compute cross product and display vector direction as arrow
+            crossVector = np.cross(vDer, uDer)
+
+            crossX[i, j] = crossVector[0]
+            crossY[i, j] = crossVector[1]
+            crossZ[i, j] = crossVector[2]
+
+    return crossX, crossY, crossZ
+
+# this function generates "normal vectors" that hard-codes the Z component of each normal vector as 0, such that
+# the fat thickness in each (2D) slice can be assessed
+def simpleNormalVectors(X, Y, Z, numPointsPerContour, numSlices):
+
+    crossX = np.zeros((numSlices, numPointsPerContour))
+    crossY = np.zeros((numSlices, numPointsPerContour))
+    crossZ = np.zeros((numSlices, numPointsPerContour))
+
+    # loop through all points and compute normals. Start with -1 (last point/slice) to ensure that operation is
+    # performed on all points and slices
+    for i in range(-1, numSlices - 1):
+        for j in range(-1, numPointsPerContour - 1):
+
+            # starting point
+            vector1 = (X[i, j], Y[i, j], Z[i, j])
+            # u differential
+            vector2 = (X[i+1, j], Y[i+1, j], Z[i+1, j])
+            uDer = np.subtract(vector2, vector1)
+            # v differential
+            vector3 = (X[i, j+1], Y[i, j+1], Z[i, j+1])
+            vDer = np.subtract(vector3, vector1)
+
+            # compute the cross product
+            crossVector = np.cross(vDer, uDer)
+            crossVector = crossVector / np.linalg.norm(crossVector)
+            # assign values to output arrays. Z component of each vector is hardcoded at 0 so that vector points
+            # straight outward towards the fat at each slice
+            crossX[i, j] = crossVector[0]
+            crossY[i, j] = crossVector[1]
+            crossZ[i, j] = 0
+
+        # check to see if the computed normal vectors have the correct orientation (i.e. point outward from the surface)
+        # if they do not, reverse the direction by negating the vectors. Z-component is ignored because it's always 0
+        if crossX[i, int(numPointsPerContour / 2)] > 0:
+            crossX[i, :] *= -1
+            crossY[i, :] *= -1
+
+    return crossX, crossY, crossZ
+
+# measures the fat thickness at each unit normal vector of the surface.
+def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPerContour, fatPointsPerSlice):
+    # TODO some mechanism to account for the "amount" of each point that the vector passes through. Since each fat point
+    # represents a voxel, the vector passing through the corner of a voxel vs directly through will contribute unevenly
+    # to the overall thickness. Maybe do first check and then use magnitude of distance to scale the contribution to the
+    # overall thickness by that pixel
+    thicknessByPoint = np.zeros((numSlices, numPointsPerContour))
+    xFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
+    yFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
+    for i in range(-1, numSlices):
+        for j in range(-1, numPointsPerContour):
+            # generate a point arbitrarily far along the normal vector
+            xDir = X[i, j] + (200 * crossX[i, j])
+            yDir = Y[i, j] + (200 * crossY[i, j])
+            thickness = 0
+            # check each fat point for proximity to the line defined by normal vector
+            for k in range(fatPointsPerSlice[i]):
+                ab = np.sqrt((xDir - X[i, j])**2 + (yDir - Y[i, j])**2)
+                ac = np.sqrt((xDir-fatX[i, k])**2 + (yDir - fatY[i, k])**2)
+                bc = np.sqrt((X[i, j] - fatX[i, k])**2 + (Y[i, j] - fatY[i, k])**2)
+
+                is_on_segment = abs(ac + bc - ab) < 0.02
+
+                # update thickness measure if a point is found to be sufficiently close
+                if is_on_segment:
+                    thickness += 1
+                    xFatPoints[i, j, k] = fatX[i, k]
+                    yFatPoints[i, j, k] = fatY[i, k]
+
+            thicknessByPoint[i, j] = thickness
+
+    return thicknessByPoint, xFatPoints, yFatPoints
