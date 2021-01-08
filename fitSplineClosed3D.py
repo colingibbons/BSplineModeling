@@ -23,7 +23,7 @@ degree = 3
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 
-###############################################################################################
+########################################################################################################################
 
 # # create synthetic tube data for testing
 # numPointsPerContour = 257
@@ -51,13 +51,13 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 # resampY = y
 # resampZ = z
 
-###############################################################################################
+########################################################################################################################
 #plot the data
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-for i in range(numSlices):
-    ax.plot(resampX[i, :], resampY[i, :], resampZ[i, :])
-plt.show()
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
+# for i in range(numSlices):
+#     ax.plot(resampX[i, :], resampY[i, :], resampZ[i, :])
+# plt.show()
 
 # set up parameters for spline fit
 numControlPointsU = 9
@@ -151,6 +151,7 @@ Vz = newVz
 # evaluate closed spline to see what it looks like
 lengthV, lengthU = np.shape(U)
 
+# evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
 startTime = time.perf_counter()
 X, Y, Z = splineTools.EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
 stopTime = time.perf_counter()
@@ -164,6 +165,7 @@ totalResampleError = errorInSurfaceFit
 maxErrorInSurfaceFit = np.max(errorInFitMatrix)
 avgErrorInSurfaceFit = errorInSurfaceFit / (numSlices * numPointsPerContour)
 
+########################################################################################################################
 # plot all data on same scale
 minX = np.min(Vx)
 minY = np.min(Vy)
@@ -180,51 +182,51 @@ elevation = 15
 # origY = y
 # origZ = z
 
-# plot the original data
-fig = plt.figure()
-ax = fig.add_subplot(2, 2, 1, projection='3d')
-ax.view_init(elevation, azimuth)
-ax.set_xlim(minX, maxX)
-ax.set_ylim(minY, maxY)
-ax.set_zlim(minZ, maxZ)
-ax.set_title('Original Data')
-
-for i in range(numSlices):
-    limit = numPointsEachContour[i]
-    #limit = numPointsPerContour
-    ax.plot(origX[i, 0:limit], origY[i, 0:limit], origZ[i, 0:limit])
-
-# plot the resampled data
-ax = fig.add_subplot(2, 2, 2, projection='3d')
-ax.view_init(elevation, azimuth)
-ax.set_xlim(minX, maxX)
-ax.set_ylim(minY, maxY)
-ax.set_zlim(minZ, maxZ)
-ax.set_title('Resampled Data; Error: {0}'.format(round(totalResampleError, 2)))
-for i in range(numSlices):
-    ax.plot(resampX[i, :], resampY[i, :], resampZ[i, :])
-
-
-# plot the control mesh
-ax = fig.add_subplot(2, 2, 3, projection='3d')
-ax.scatter(Vx, Vy, Vz, s=4)
-ax.set_title('Control point Mesh: {0}x{1}'.format(numControlPointsU, numControlPointsV))
-
-# add horizontal connections
-for i in range(numControlPointsV):
-    ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
-
-# add vertical connections
-for i in range(numCalcControlPointsU):
-    ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
-
-# now plot the surface
-ax = fig.add_subplot(2, 2, 4, projection='3d')
-ax.set_title('{0}x{1}'.format(lengthU, lengthV))  # can add error metrics to title later if necessary
-ax.plot_surface(X, Y, Z)
-
-# now that all subplots have been generated, display them on a single figure
-plt.show()
+# # plot the original data
+# fig = plt.figure()
+# ax = fig.add_subplot(2, 2, 1, projection='3d')
+# ax.view_init(elevation, azimuth)
+# ax.set_xlim(minX, maxX)
+# ax.set_ylim(minY, maxY)
+# ax.set_zlim(minZ, maxZ)
+# ax.set_title('Original Data')
+#
+# for i in range(numSlices):
+#     limit = numPointsEachContour[i]
+#     #limit = numPointsPerContour
+#     ax.plot(origX[i, 0:limit], origY[i, 0:limit], origZ[i, 0:limit])
+#
+# # plot the resampled data
+# ax = fig.add_subplot(2, 2, 2, projection='3d')
+# ax.view_init(elevation, azimuth)
+# ax.set_xlim(minX, maxX)
+# ax.set_ylim(minY, maxY)
+# ax.set_zlim(minZ, maxZ)
+# ax.set_title('Resampled Data; Error: {0}'.format(round(totalResampleError, 2)))
+# for i in range(numSlices):
+#     ax.plot(resampX[i, :], resampY[i, :], resampZ[i, :])
+#
+#
+# # plot the control mesh
+# ax = fig.add_subplot(2, 2, 3, projection='3d')
+# ax.scatter(Vx, Vy, Vz, s=4)
+# ax.set_title('Control point Mesh: {0}x{1}'.format(numControlPointsU, numControlPointsV))
+#
+# # add horizontal connections
+# for i in range(numControlPointsV):
+#     ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
+#
+# # add vertical connections
+# for i in range(numCalcControlPointsU):
+#     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
+#
+# # now plot the surface
+# ax = fig.add_subplot(2, 2, 4, projection='3d')
+# ax.set_title('{0}x{1}'.format(lengthU, lengthV))  # can add error metrics to title later if necessary
+# ax.plot_surface(X, Y, Z)
+#
+# # now that all subplots have been generated, display them on a single figure
+# plt.show()
 
 # plot control points and the surface on the same plot
 fig = plt.figure()
@@ -263,34 +265,70 @@ crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerCo
 thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
                                                                            numPointsPerContour, numFatPointsPerSlice)
 
-#plot each normal vector one at a time along with the fat points associated with it
-for i in range(numSlices):
-    count = 0
-    for j in range(numPointsPerContour):
-        x = xFatPoints[i, j, :]
-        y = yFatPoints[i, j, :]
-        z = fatZ[i]
-        points = ax.scatter(xFatPoints[i, j, :], yFatPoints[i, j, :], fatZ[i], s=4, c='black')
-        pointX = X[i, j] + 100*crossX[i, j]
-        pointY = Y[i, j] + 100*crossY[i, j]
-        pointZ = Z[i, j]
-        points2 = ax.scatter(pointX, pointY, pointZ, marker='s', s=4, c='purple')
-        vector = ax.quiver(X[i, j], Y[i, j], Z[i, j], crossX[i, j], crossY[i, j], crossZ[i, j], length=10,
-                           color='purple', arrow_length_ratio=0.1)
-        count += 1
-        message = "Slice {}, Point {}: Fat thickness of {}".format(i, j, thicknessByPoint[i, j])
-        plt.title(message)
-        plt.draw()
-        plt.pause(0.5)
-        points.remove()
-        points2.remove()
-        vector.remove()
-    print(count)
+
+# #plot each normal vector one at a time along with the fat points associated with it
+# for i in range(numSlices):
+#     count = 0
+#     for j in range(numPointsPerContour):
+#         x = xFatPoints[i, j, :]
+#         y = yFatPoints[i, j, :]
+#         z = fatZ[i]
+#         points = ax.scatter(xFatPoints[i, j, :], yFatPoints[i, j, :], fatZ[i], s=4, c='black')
+#         pointX = X[i, j] + 100*crossX[i, j]
+#         pointY = Y[i, j] + 100*crossY[i, j]
+#         pointZ = Z[i, j]
+#         points2 = ax.scatter(pointX, pointY, pointZ, marker='s', s=4, c='purple')
+#         vector = ax.quiver(X[i, j], Y[i, j], Z[i, j], crossX[i, j], crossY[i, j], crossZ[i, j], length=10,
+#                            color='purple', arrow_length_ratio=0.1)
+#         count += 1
+#         message = "Slice {}, Point {}: Fat thickness of {}".format(i, j, thicknessByPoint[i, j])
+#         plt.title(message)
+#         plt.draw()
+#         plt.pause(0.5)
+#         points.remove()
+#         points2.remove()
+#         vector.remove()
+#     print(count)
 
 # display plot with control point mesh, surface, and fat points
+#plt.show()
+
+########################################################################################################################
+
+# get points that will be used to create fat spline surface
+fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint,xFatPoints, yFatPoints, X, Y,
+                                                                        Z, numSlices, numPointsPerContour)
+
+# create a spline surface for the fat that is open in both directions
+# TODO split fat into multiple deposits and iterate this process for each deposit
+XFat, YFat, ZFat = splineTools.fitSplineOpen3D(fatSurfaceX, fatSurfaceY, fatSurfaceZ, numSlices, numPointsPerContour)
+
+# plot control points and the surface on the same plot
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.set_title('Combined plot')
+ax.view_init(elevation, azimuth)
+ax.set_xlim(minX, maxX)
+ax.set_ylim(minY, maxY)
+ax.set_zlim(minZ, maxZ)
+
+# plot control points
+#ax.scatter(Vx, Vy, Vz, s=4)
+
+# add horizontal connections
+# for i in range(numControlPointsV):
+#     ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
+#
+# # add vertical connections
+# for i in range(numCalcControlPointsU):
+#     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
+
+# plot the surface
+#ax.plot_surface(X, Y, Z)
+
+# plot the fat surface
+ax.plot_surface(XFat[0:4, :], YFat[0:4, :], ZFat[0:4, :])
+
+# display the plot with both surfaces on it
 plt.show()
-
-
-
-
 

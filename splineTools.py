@@ -1,4 +1,6 @@
 import numpy as np
+from scipy.spatial.distance import euclidean
+import time
 
 # this function performs a polar reordering of points
 def reOrder(points):
@@ -414,6 +416,10 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     thicknessByPoint = np.zeros((numSlices, numPointsPerContour))
     xFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
     yFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
+    # fill point array with -1. Because of the way tissue data is extracted from PATS, all actual values will be
+    # positive. Using -1 prevents filler points and actual data from being mistaken for one another
+    xFatPoints.fill(-1)
+    yFatPoints.fill(-1)
     for i in range(-1, numSlices):
         for j in range(-1, numPointsPerContour):
             # generate a point arbitrarily far along the normal vector
@@ -437,3 +443,102 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
             thicknessByPoint[i, j] = thickness
 
     return thicknessByPoint, xFatPoints, yFatPoints
+
+# get the set of points that will be used to generate a fat spline surface
+def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
+
+    fatSurfaceX = np.zeros((numSlices, numPointsPerContour))
+    fatSurfaceY = np.zeros((numSlices, numPointsPerContour))
+    fatSurfaceZ = Z
+    for i in range(numSlices):
+        for j in range(numPointsPerContour):
+            if thicknessByPoint[i, j] == 0:
+                fatSurfaceX[i, j] = X[i, j]
+                fatSurfaceY[i, j] = Y[i, j]
+            else:
+                for x, y in zip(xFatPoints[i, j, :], yFatPoints[i, j, :]):
+                    if x == y == -1:
+                        pass
+                    else:
+                        surfacePoint = (X[i, j], Y[i, j])
+                        dist = 0
+                        fatDist = abs(euclidean(surfacePoint, (x, y)))
+                        if fatDist > dist:
+                            fatSurfaceX[i, j] = x
+                            fatSurfaceY[i, j] = y
+
+    return fatSurfaceX, fatSurfaceY, fatSurfaceZ
+
+# generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
+def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
+    # set up parameters for spline fit
+    numControlPointsU = 9
+    numControlPointsV = 6
+    degree = 3
+    numCalcControlPointsU = numControlPointsU + degree
+    m = numControlPointsU - 1
+    n = numControlPointsV - 1
+    M = numPointsPerContour - 1
+    N = numSlices - 1
+
+    # determine number of knots in each direction. Knot numbers are chosen so that spline is open in both
+    # parameterization directions
+    numKnotsU = m + degree + 2
+    numInteriorKnotsU = numKnotsU - 2*degree
+    tauU = np.zeros(numKnotsU)
+    tauU[degree:numInteriorKnotsU+degree] = np.linspace(0, 1, numInteriorKnotsU)
+    tauU[numInteriorKnotsU+degree:numKnotsU] = np.ones(degree)
+
+    numKnotsV = n + degree + 2
+    numInteriorKnotsV = numKnotsV - 2*degree
+    tauV = np.zeros(numKnotsV)
+    tauV[degree:numInteriorKnotsV + degree] = np.linspace(0, 1, numInteriorKnotsV)
+    tauV[numInteriorKnotsV + degree:numKnotsV] = np.ones(degree)
+
+    # set up parameterization
+    U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(fatX, fatY, fatZ, tauU, tauV, degree)
+
+    # now we need to set up matrices to solve for mesh of control points
+    # (B*V*T^T = P)
+
+    # set up C matrix
+    C = np.zeros((N + 1, n + 1))
+    for s in range(N + 1):
+        for j in range(n + 1):
+            vVal = V[s, 0]
+            C[s, j] = NVal(tauV, vVal, j-1, degree, 0)
+
+    # set up B matrix
+    B = np.zeros((M + 1, m + 1))
+    for r in range(M + 1):
+        for i in range(m + 1):
+            uVal = U[0, r]
+            B[r, i] = NVal(tauU, uVal, i-1, degree, 0)
+
+
+    # now set up Px, Py, and Pz matrices
+    Px = np.transpose(fatX)
+    Py = np.transpose(fatY)
+    Pz = np.transpose(fatZ)
+
+    # calculate pseudo-inverses of B and C for use in generating control points
+    pinvB = np.linalg.pinv(B)
+    pinvC = np.linalg.pinv(np.transpose(C))
+
+    # solve for control points
+    Vx = np.matmul(pinvB, Px)
+    Vx = np.transpose(np.matmul(Vx, pinvC))
+
+    Vy = np.matmul(pinvB, Py)
+    Vy = np.transpose(np.matmul(Vy, pinvC))
+
+    Vz = np.matmul(pinvB, Pz)
+    Vz = np.transpose(np.matmul(Vz, pinvC))
+
+    # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
+    startTime = time.perf_counter()
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
+    stopTime = time.perf_counter()
+    print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
+
+    return X, Y, Z
