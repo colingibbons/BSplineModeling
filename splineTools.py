@@ -472,28 +472,31 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
 def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
     # set up parameters for spline fit
-    numControlPointsU = 9
+    numControlPointsU = 6
     numControlPointsV = 6
     degree = 3
-    numCalcControlPointsU = numControlPointsU + degree
     m = numControlPointsU - 1
     n = numControlPointsV - 1
+    numCalcControlPointsU = numControlPointsU + degree
+    numCalcControlPointsV = numControlPointsV + degree
     M = numPointsPerContour - 1
     N = numSlices - 1
 
-    # determine number of knots in each direction. Knot numbers are chosen so that spline is open in both
-    # parameterization directions
-    numKnotsU = m + degree + 2
-    numInteriorKnotsU = numKnotsU - 2*degree
+    numKnotsU = m + 2 * degree + 2
     tauU = np.zeros(numKnotsU)
-    tauU[degree:numInteriorKnotsU+degree] = np.linspace(0, 1, numInteriorKnotsU)
-    tauU[numInteriorKnotsU+degree:numKnotsU] = np.ones(degree)
+    numOpenKnotsU = m + degree + 1
+    tauU[0:numOpenKnotsU] = np.linspace(0, 1, numOpenKnotsU)
+    for i in range(degree + 1):
+        diff = tauU[i + 1] - tauU[i]
+        tauU[numOpenKnotsU + i] = tauU[numOpenKnotsU + i - 1] + diff
 
-    numKnotsV = n + degree + 2
-    numInteriorKnotsV = numKnotsV - 2*degree
+    numKnotsV = n + 2 * degree + 2
     tauV = np.zeros(numKnotsV)
-    tauV[degree:numInteriorKnotsV + degree] = np.linspace(0, 1, numInteriorKnotsV)
-    tauV[numInteriorKnotsV + degree:numKnotsV] = np.ones(degree)
+    numOpenKnotsV = n + degree + 1
+    tauV[0:numOpenKnotsV] = np.linspace(0, 1, numOpenKnotsV)
+    for i in range(degree + 1):
+        diff = tauV[i + 1] - tauV[i]
+        tauV[numOpenKnotsV + i] = tauV[numOpenKnotsV + i - 1] + diff
 
     # set up parameterization
     U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(fatX, fatY, fatZ, tauU, tauV, degree)
@@ -501,19 +504,18 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
 
-    # set up C matrix
-    C = np.zeros((N + 1, n + 1))
-    for s in range(N + 1):
-        for j in range(n + 1):
-            vVal = V[s, 0]
-            C[s, j] = NVal(tauV, vVal, j-1, degree, 0)
-
-    # set up B matrix
-    B = np.zeros((M + 1, m + 1))
+    B = np.zeros((M + 1, numCalcControlPointsU))
     for r in range(M + 1):
-        for i in range(m + 1):
+        for i in range(numCalcControlPointsU):
             uVal = U[0, r]
-            B[r, i] = NVal(tauU, uVal, i-1, degree, 0)
+            B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
+
+    # set up C matrix
+    C = np.zeros((N + 1, numCalcControlPointsV))
+    for s in range(N + 1):
+        for j in range(numCalcControlPointsV):
+            vVal = V[s, 0]
+            C[s, j] = NVal(tauV, vVal, j - 1, degree, 0)
 
 
     # now set up Px, Py, and Pz matrices

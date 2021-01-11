@@ -327,7 +327,7 @@ ax.set_zlim(minZ, maxZ)
 #ax.plot_surface(X, Y, Z)
 
 # plot the fat surface
-ax.plot_surface(XFat[0:4, :], YFat[0:4, :], ZFat[0:4, :])
+ax.plot_surface(XFat, YFat, ZFat)
 
 # display the plot with both surfaces on it
 plt.show()
