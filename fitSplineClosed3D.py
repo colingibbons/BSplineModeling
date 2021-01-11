@@ -7,8 +7,8 @@ import time
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
 startFrame = 2
 stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
@@ -261,7 +261,6 @@ crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerCo
 #ax.quiver(X, Y, Z, crossX, crossY, crossZ, length=10, color='purple', arrow_length_ratio=0.1)
 
 # measure fat thickness at each normal vector
-# TODO deal with fact that a bunch of points will appear at (0, 0)
 thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
                                                                            numPointsPerContour, numFatPointsPerSlice)
 
@@ -296,12 +295,20 @@ thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y,
 ########################################################################################################################
 
 # get points that will be used to create fat spline surface
-fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint,xFatPoints, yFatPoints, X, Y,
+# TODO make this function return lists of multiple deposits rather than a single one
+fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
                                                                         Z, numSlices, numPointsPerContour)
 
 # create a spline surface for the fat that is open in both directions
-# TODO split fat into multiple deposits and iterate this process for each deposit
 XFat, YFat, ZFat = splineTools.fitSplineOpen3D(fatSurfaceX, fatSurfaceY, fatSurfaceZ, numSlices, numPointsPerContour)
+# XFat = []
+# YFat = []
+# ZFat = []
+# for x, y, z in zip(fatSurfaceX, fatSurfaceY, fatSurfaceZ):
+#     xf, yf, zf = splineTools.fitSplineOpen3D(x, y, z, numSlices, numPointsPerContour)
+#     XFat.append(xf)
+#     YFat.append(yf)
+#     ZFat.append(zf)
 
 # plot control points and the surface on the same plot
 fig = plt.figure()

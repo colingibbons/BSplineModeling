@@ -7,8 +7,8 @@ def reOrder(points):
     numPoints = len(points)
 
     # calculate the centroid for this point set
-    centroidX = np.mean(points[:,0])
-    centroidY = np.mean(points[:,1])
+    centroidX = np.mean(points[:, 0])
+    centroidY = np.mean(points[:, 1])
     centroid = np.asarray((centroidX, centroidY))
 
     # reposition points around centroid
@@ -140,9 +140,9 @@ def parameterizeTube(X, Y, Z, tauU, tauV, degree):
     # each column of V will be the same
     # scale a column of Z to parameter range
     firstKnotV = tauV[degree]
-    lastKnotV = tauV[len(tauV)-degree-1]
+    lastKnotV = tauV[-degree-1]
     vRange = lastKnotV - firstKnotV
-    zRange = Z[len(Z)-1, 0] - Z[0, 0]
+    zRange = Z[-1, 0] - Z[0, 0]
     zVect = Z[:, 0]
     scaleFactor = vRange / zRange
     offset = zVect[0] * scaleFactor
@@ -152,7 +152,7 @@ def parameterizeTube(X, Y, Z, tauU, tauV, degree):
     # we've already sampled along contours uniformly.
     # each row will be uniform in valid parameter support
     firstKnotU = tauU[degree]
-    lastKnotU = tauU[len(tauU) - degree - 1]
+    lastKnotU = tauU[-degree-1]
     uVect = np.linspace(firstKnotU, lastKnotU, numPointsPerContour)
 
     # compute U and V with meshgrid since row/column dimensions are the same
@@ -498,8 +498,13 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
         diff = tauV[i + 1] - tauV[i]
         tauV[numOpenKnotsV + i] = tauV[numOpenKnotsV + i - 1] + diff
 
+    # TODO decide if this is correct!
     # set up parameterization
     U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(fatX, fatY, fatZ, tauU, tauV, degree)
+
+    # apply offset to V so that highest value in parameterization is 1.00
+    offset = 1.00 - V[-1, 0]
+    V += offset
 
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
