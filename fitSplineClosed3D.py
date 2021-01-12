@@ -265,10 +265,20 @@ thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y,
                                                                            numPointsPerContour, numFatPointsPerSlice)
 
 
+sortedX, sortedY, sortedCrossX, sortedCrossY = splineTools.pairNormalVectors(X, Y, crossX, crossY, numSlices,
+                                                                             numPointsPerContour)
+
+for j in range(numPointsPerContour):
+    vector = ax.quiver(sortedX[:, j], sortedY[:, j], Z[:, j], crossX[:, j], crossY[:, j], crossZ[:, j],
+                       length=10, color='purple', arrow_length_ratio=0.1)
+    plt.draw()
+    plt.pause(2)
+    vector.remove()
 # #plot each normal vector one at a time along with the fat points associated with it
-# for i in range(numSlices):
-#     count = 0
-#     for j in range(numPointsPerContour):
+#
+#for i in range(numSlices):
+#    count = 0
+#    for j in range(numPointsPerContour):
 #         x = xFatPoints[i, j, :]
 #         y = yFatPoints[i, j, :]
 #         z = fatZ[i]
@@ -294,13 +304,16 @@ thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y,
 
 ########################################################################################################################
 
-# get points that will be used to create fat spline surface
-# TODO make this function return lists of multiple deposits rather than a single one
-fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
-                                                                        Z, numSlices, numPointsPerContour)
+# # get points that will be used to create fat spline surface
+# fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
+#                                                                         Z, numSlices, numPointsPerContour)
+
+# generate a list of fat deposits to be converted into individual b-spline surfaces
+# fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z,
+#                                                                    numSlices, numPointsPerContour)
 
 # create a spline surface for the fat that is open in both directions
-XFat, YFat, ZFat = splineTools.fitSplineOpen3D(fatSurfaceX, fatSurfaceY, fatSurfaceZ, numSlices, numPointsPerContour)
+# XFat, YFat, ZFat = splineTools.fitSplineOpen3D(fatSurfaceX, fatSurfaceY, fatSurfaceZ, numSlices, numPointsPerContour)
 # XFat = []
 # YFat = []
 # ZFat = []

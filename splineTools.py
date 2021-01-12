@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
+from scipy.spatial import KDTree
 import time
 
 # this function performs a polar reordering of points
@@ -444,7 +445,7 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
 
     return thicknessByPoint, xFatPoints, yFatPoints
 
-# get the set of points that will be used to generate a fat spline surface
+# get the set of points that will be used to generate a single fat spline surface
 def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
 
     fatSurfaceX = np.zeros((numSlices, numPointsPerContour))
@@ -468,6 +469,48 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
                             fatSurfaceY[i, j] = y
 
     return fatSurfaceX, fatSurfaceY, fatSurfaceZ
+
+# pair normal vectors with their closest counterparts to streamline fat deposit segmentation
+def pairNormalVectors(X, Y, crossX, crossY, numSlices, numPointsPerContour):
+    sortedX = np.zeros((numSlices, numPointsPerContour))
+    sortedY = np.zeros((numSlices, numPointsPerContour))
+    sortedCrossX = np.zeros((numSlices, numPointsPerContour))
+    sortedCrossY = np.zeros((numSlices, numPointsPerContour))
+
+    # lock in bottom slice - subsequent layers will have vectors paired based on this slice
+    sortedX[0] = X[0]
+    sortedY[0] = Y[0]
+    sortedCrossX[0] = crossX[0]
+    sortedCrossY[0] = crossY[0]
+
+    firstSlice = np.column_stack((X[0], Y[0]))
+    centroidFirstSlice = np.asarray(np.mean(X[0]), np.mean(Y[0]))
+    newPointsFirst = firstSlice - np.tile(centroidFirstSlice, (len(firstSlice), 1))
+
+    angles = np.arctan2(newPointsFirst[:, 1], newPointsFirst[:, 0])
+    firstAngles = angles + ((2 * np.pi) * (angles < 0))
+
+    for i in range(1, numSlices):
+        currentSlice = np.column_stack((X[i], Y[i]))
+        newPointsCurrent = currentSlice - np.tile(centroidFirstSlice, (len(currentSlice), 1))
+
+        angles = np.arctan2(newPointsCurrent[:, 1], newPointsCurrent[:, 0])
+        currentAngles = angles + ((2 * np.pi) * (angles < 0))
+
+
+    return sortedX, sortedY, sortedCrossX, sortedCrossY
+
+# generate a list of fat deposits to create a collection of fat splines that reflect the non-continuous nature
+# of fat surrounding the myocardium
+def getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
+    # create empty lists for holding fat information
+    fatSurfaceX = []
+    fatSurfaceY = []
+    fatSurfaceZ = []
+    for i in range(numSlices):
+        for j in range(numPointsPerContour):
+            if thicknessByPoint[i, j] == 0 and thicknessByPoint[i, j+1] != 0:
+                pass
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
 def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
