@@ -373,14 +373,14 @@ def generateNormalVectors(X, Y, Z):
 # the fat thickness in each (2D) slice can be assessed
 def simpleNormalVectors(X, Y, Z, numPointsPerContour, numSlices):
 
-    crossX = np.zeros((numSlices, numPointsPerContour))
-    crossY = np.zeros((numSlices, numPointsPerContour))
-    crossZ = np.zeros((numSlices, numPointsPerContour))
+    crossX = np.zeros((numSlices, numPointsPerContour - 1))
+    crossY = np.zeros((numSlices, numPointsPerContour - 1))
+    crossZ = np.zeros((numSlices, numPointsPerContour - 1))
 
-    # loop through all points and compute normals. Start with -1 (last point/slice) to ensure that operation is
-    # performed on all points and slices
+    # loop through all points and compute normals. First and last points on each contour are the same, so the (redundant)
+    # normal is not computed for the last point
     for i in range(-1, numSlices - 1):
-        for j in range(-1, numPointsPerContour - 1):
+        for j in range(numPointsPerContour - 1):
 
             # starting point
             vector1 = (X[i, j], Y[i, j], Z[i, j])
@@ -414,15 +414,15 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     # represents a voxel, the vector passing through the corner of a voxel vs directly through will contribute unevenly
     # to the overall thickness. Maybe do first check and then use magnitude of distance to scale the contribution to the
     # overall thickness by that pixel
-    thicknessByPoint = np.zeros((numSlices, numPointsPerContour))
+    thicknessByPoint = np.zeros((numSlices, numPointsPerContour - 1))
     xFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
     yFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
     # fill point array with -1. Because of the way tissue data is extracted from PATS, all actual values will be
     # positive. Using -1 prevents filler points and actual data from being mistaken for one another
     xFatPoints.fill(-1)
     yFatPoints.fill(-1)
-    for i in range(-1, numSlices):
-        for j in range(-1, numPointsPerContour):
+    for i in range(-1, numSlices - 1):
+        for j in range(numPointsPerContour - 1):
             # generate a point arbitrarily far along the normal vector
             xDir = X[i, j] + (200 * crossX[i, j])
             yDir = Y[i, j] + (200 * crossY[i, j])
@@ -448,11 +448,11 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
 # get the set of points that will be used to generate a single fat spline surface
 def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
 
-    fatSurfaceX = np.zeros((numSlices, numPointsPerContour))
-    fatSurfaceY = np.zeros((numSlices, numPointsPerContour))
+    fatSurfaceX = np.zeros((numSlices, numPointsPerContour - 1))
+    fatSurfaceY = np.zeros((numSlices, numPointsPerContour - 1))
     fatSurfaceZ = Z
     for i in range(numSlices):
-        for j in range(numPointsPerContour):
+        for j in range(numPointsPerContour - 1):
             if thicknessByPoint[i, j] == 0:
                 fatSurfaceX[i, j] = X[i, j]
                 fatSurfaceY[i, j] = Y[i, j]
@@ -474,8 +474,8 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 def pairNormalVectors(X, Y, crossX, crossY, numSlices, numPointsPerContour):
     sortedX = np.zeros((numSlices, numPointsPerContour))
     sortedY = np.zeros((numSlices, numPointsPerContour))
-    sortedCrossX = np.zeros((numSlices, numPointsPerContour))
-    sortedCrossY = np.zeros((numSlices, numPointsPerContour))
+    sortedCrossX = np.zeros((numSlices, numPointsPerContour - 1))
+    sortedCrossY = np.zeros((numSlices, numPointsPerContour - 1))
 
     # lock in bottom slice - subsequent layers will have vectors paired based on this slice
     sortedX[0] = X[0]
@@ -483,23 +483,19 @@ def pairNormalVectors(X, Y, crossX, crossY, numSlices, numPointsPerContour):
     sortedCrossX[0] = crossX[0]
     sortedCrossY[0] = crossY[0]
 
-    firstSlice = np.column_stack((X[0], Y[0]))
-    centroidFirstSlice = np.asarray(np.mean(X[0]), np.mean(Y[0]))
-    newPointsFirst = firstSlice - np.tile(centroidFirstSlice, (len(firstSlice), 1))
-
-    angles = np.arctan2(newPointsFirst[:, 1], newPointsFirst[:, 0])
-    firstAngles = angles + ((2 * np.pi) * (angles < 0))
-
+    currentSlice = np.column_stack((X[0, :numPointsPerContour-1], Y[0, :numPointsPerContour-1]))
     for i in range(1, numSlices):
-        currentSlice = np.column_stack((X[i], Y[i]))
-        newPointsCurrent = currentSlice - np.tile(centroidFirstSlice, (len(currentSlice), 1))
-
-        angles = np.arctan2(newPointsCurrent[:, 1], newPointsCurrent[:, 0])
-        currentAngles = angles + ((2 * np.pi) * (angles < 0))
-
+        nextSlice = np.column_stack((X[i, :numPointsPerContour-1], Y[i, :numPointsPerContour-1]))
+        tree = KDTree(nextSlice)
+        indices = tree.query(currentSlice)[1]
+        for j in range(numPointsPerContour - 1):
+            sortedX[i, j] = X[i, indices[j]]
+            sortedY[i, j] = Y[i, indices[j]]
+            sortedCrossX[i, j] = crossX[i, indices[j]]
+            sortedCrossY[i, j] = crossY[i, indices[j]]
+        currentSlice = nextSlice
 
     return sortedX, sortedY, sortedCrossX, sortedCrossY
-
 # generate a list of fat deposits to create a collection of fat splines that reflect the non-continuous nature
 # of fat surrounding the myocardium
 def getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
@@ -508,9 +504,18 @@ def getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices,
     fatSurfaceY = []
     fatSurfaceZ = []
     for i in range(numSlices):
-        for j in range(numPointsPerContour):
-            if thicknessByPoint[i, j] == 0 and thicknessByPoint[i, j+1] != 0:
+        sliceDepositCount = 0
+        for j in range(numPointsPerContour - 1):
+            if thicknessByPoint[i, j] == 0 and thicknessByPoint[i, j-1] == 0:
                 pass
+            if thicknessByPoint[i, j] != 0 and thicknessByPoint[i, j-1] == 0:
+                sliceDepositCount += 1
+                depositStart = j
+                print("deposit {} on slice {} starts at {}".format(sliceDepositCount, numSlices, depositStart))
+            elif thicknessByPoint[i, j] == 0 and thicknessByPoint[i, j-1] != 0:
+                depositEnd = j - 1
+                print("deposit {} on slice {} ends at {}".format(sliceDepositCount, numSlices, depositEnd))
+
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
 def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):

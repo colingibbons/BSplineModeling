@@ -7,10 +7,12 @@ import time
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-startFrame = 2
-stopFrame = 7
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
+startFrame = 3
+stopFrame = 8
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -268,17 +270,17 @@ thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y,
 sortedX, sortedY, sortedCrossX, sortedCrossY = splineTools.pairNormalVectors(X, Y, crossX, crossY, numSlices,
                                                                              numPointsPerContour)
 
-for j in range(numPointsPerContour):
-    vector = ax.quiver(sortedX[:, j], sortedY[:, j], Z[:, j], crossX[:, j], crossY[:, j], crossZ[:, j],
-                       length=10, color='purple', arrow_length_ratio=0.1)
-    plt.draw()
-    plt.pause(2)
-    vector.remove()
-# #plot each normal vector one at a time along with the fat points associated with it
-#
-#for i in range(numSlices):
+# for j in range(numPointsPerContour):
+#     vector = ax.quiver(sortedX[:, j], sortedY[:, j], Z[:, j], crossX[:, j], crossY[:, j], crossZ[:, j],
+#                        length=10, color='purple', arrow_length_ratio=0.1)
+#     plt.draw()
+#     plt.pause(2)
+#     vector.remove()
+
+# # plot each normal vector one at a time along with the fat points associated with it
+# for i in range(numSlices):
 #    count = 0
-#    for j in range(numPointsPerContour):
+#    for j in range(numPointsPerContour - 1):
 #         x = xFatPoints[i, j, :]
 #         y = yFatPoints[i, j, :]
 #         z = fatZ[i]
@@ -297,7 +299,7 @@ for j in range(numPointsPerContour):
 #         points.remove()
 #         points2.remove()
 #         vector.remove()
-#     print(count)
+#         print(count)
 
 # display plot with control point mesh, surface, and fat points
 #plt.show()
@@ -309,8 +311,8 @@ for j in range(numPointsPerContour):
 #                                                                         Z, numSlices, numPointsPerContour)
 
 # generate a list of fat deposits to be converted into individual b-spline surfaces
-# fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z,
-#                                                                    numSlices, numPointsPerContour)
+fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z,
+                                                                   numSlices, numPointsPerContour)
 
 # create a spline surface for the fat that is open in both directions
 # XFat, YFat, ZFat = splineTools.fitSplineOpen3D(fatSurfaceX, fatSurfaceY, fatSurfaceZ, numSlices, numPointsPerContour)
