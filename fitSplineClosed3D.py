@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib
+from skimage import measure
+
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import time
@@ -7,12 +9,12 @@ import time
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-startFrame = 3
-stopFrame = 8
+# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/fat_slice_'
+startFrame = 2
+stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -258,7 +260,6 @@ fatX, fatY, fatZ, numFatPointsPerSlice = splineTools.readSlicePoints(fatName, st
 ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
 
 # generate normal vectors
-# crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z)
 crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerContour, numSlices)
 #ax.quiver(X, Y, Z, crossX, crossY, crossZ, length=10, color='purple', arrow_length_ratio=0.1)
 
@@ -266,6 +267,38 @@ crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerCo
 thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
                                                                            numPointsPerContour, numFatPointsPerSlice)
 
+# create binarized version of thickness array for segmentation purposes
+thicknessBinary = np.copy(thicknessByPoint)
+thicknessBinary[thicknessBinary > 0] = 255
+
+# isolate fat deposits and "label" them with different numeric values to differentiate them
+fatDeposits = thicknessBinary > thicknessBinary.mean()
+all_labels = measure.label(fatDeposits)
+deposit_labels = measure.label(fatDeposits, background=0)
+
+# combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
+for i in range(numSlices):
+    if deposit_labels[i, 0] != 0 and deposit_labels[i, -1] != 0:
+        obj = deposit_labels[i, -1]
+        deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
+
+# plot the thickness array as a heatmap
+fig = plt.figure()
+fig.add_subplot(2, 1, 1)
+plt.imshow(thicknessByPoint, cmap='hot')
+plt.title('Fat map')
+plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
+plt.ylabel('Elevation ({})'.format(numSlices))
+plt.colorbar()
+
+# plot the segmentation output
+fig.add_subplot(2, 1, 2)
+plt.imshow(deposit_labels, cmap='hot')
+plt.title('Fat deposit segmentation')
+plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
+plt.ylabel('Elevation ({})'.format(numSlices))
+plt.colorbar()
+plt.show()
 
 sortedX, sortedY, sortedCrossX, sortedCrossY = splineTools.pairNormalVectors(X, Y, crossX, crossY, numSlices,
                                                                              numPointsPerContour)
