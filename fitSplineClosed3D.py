@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib
-from skimage import measure
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -9,12 +8,12 @@ import time
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/fat_slice_'
-startFrame = 2
-stopFrame = 7
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/fat_slice_'
+startFrame = 3
+stopFrame = 8
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -267,20 +266,13 @@ crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerCo
 thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
                                                                            numPointsPerContour, numFatPointsPerSlice)
 
-# create binarized version of thickness array for segmentation purposes
-thicknessBinary = np.copy(thicknessByPoint)
-thicknessBinary[thicknessBinary > 0] = 255
 
-# isolate fat deposits and "label" them with different numeric values to differentiate them
-fatDeposits = thicknessBinary > thicknessBinary.mean()
-all_labels = measure.label(fatDeposits)
-deposit_labels = measure.label(fatDeposits, background=0)
+# get points that will be used to create fat spline surface
+fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
+                                                                        Z, numSlices, numPointsPerContour)
 
-# combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
-for i in range(numSlices):
-    if deposit_labels[i, 0] != 0 and deposit_labels[i, -1] != 0:
-        obj = deposit_labels[i, -1]
-        deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
+# generate an array that groups areas of nonzero fat thickness into separate fat deposits
+deposits, numDeposits = splineTools.getFatDeposits(thicknessByPoint, numSlices)
 
 # plot the thickness array as a heatmap
 fig = plt.figure()
@@ -293,22 +285,52 @@ plt.colorbar()
 
 # plot the segmentation output
 fig.add_subplot(2, 1, 2)
-plt.imshow(deposit_labels, cmap='hot')
+plt.imshow(deposits, cmap='hot')
 plt.title('Fat deposit segmentation')
 plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
 plt.ylabel('Elevation ({})'.format(numSlices))
 plt.colorbar()
 plt.show()
 
-sortedX, sortedY, sortedCrossX, sortedCrossY = splineTools.pairNormalVectors(X, Y, crossX, crossY, numSlices,
-                                                                             numPointsPerContour)
+# loop through each deposit and generate a spline surface for that deposit if it is sufficiently large
+# TODO figure out how to handle very small deposits/deposits that appear on only one slice
+fatDepositsX = []
+fatDepositsY = []
+fatDepositsZ = []
+for i in range(1, numDeposits + 1):
+    # copy fat surface points into array
+    currentDepositX = np.copy(fatSurfaceX)
+    currentDepositY = np.copy(fatSurfaceY)
+    currentDepositZ = np.copy(fatSurfaceZ)
 
-# for j in range(numPointsPerContour):
-#     vector = ax.quiver(sortedX[:, j], sortedY[:, j], Z[:, j], crossX[:, j], crossY[:, j], crossZ[:, j],
-#                        length=10, color='purple', arrow_length_ratio=0.1)
-#     plt.draw()
-#     plt.pause(2)
-#     vector.remove()
+    # remove points not corresponding with the current deposit
+    currentDepositX[deposits != i] = 0
+    currentDepositY[deposits != i] = 0
+
+    # get number of nonzero points in each slice
+    numPointsEachContour = (currentDepositX != 0).sum(1)
+
+    # trim fat deposit array down to only include slices with nonzero thickness values
+    currentDepositX = currentDepositX[numPointsEachContour != 0, :]
+    currentDepositY = currentDepositY[numPointsEachContour != 0, :]
+    currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
+
+    numSlicesNonZero = 0
+    for j in numPointsEachContour:
+        if j > 0:
+            numSlicesNonZero += 1
+
+    # only generate a spline surface if multiple slices have points for that deposit. Otherwise won't work
+    if numSlicesNonZero > 1:
+        # generate spline surface for the current fat deposit
+
+        depositPointsEachContour = numPointsEachContour[numPointsEachContour > 0]
+        depositSplineX, depositSplineY, depositSplineZ = splineTools.fitSplineOpen3D(currentDepositX, currentDepositY,
+                                                                                     currentDepositZ, numSlicesNonZero,
+                                                                                     depositPointsEachContour)
+        fatDepositsX.append(depositSplineX)
+        fatDepositsY.append(depositSplineY)
+        fatDepositsZ.append(depositSplineZ)
 
 # # plot each normal vector one at a time along with the fat points associated with it
 # for i in range(numSlices):
@@ -339,25 +361,6 @@ sortedX, sortedY, sortedCrossX, sortedCrossY = splineTools.pairNormalVectors(X, 
 
 ########################################################################################################################
 
-# # get points that will be used to create fat spline surface
-# fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
-#                                                                         Z, numSlices, numPointsPerContour)
-
-# generate a list of fat deposits to be converted into individual b-spline surfaces
-fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z,
-                                                                   numSlices, numPointsPerContour)
-
-# create a spline surface for the fat that is open in both directions
-# XFat, YFat, ZFat = splineTools.fitSplineOpen3D(fatSurfaceX, fatSurfaceY, fatSurfaceZ, numSlices, numPointsPerContour)
-# XFat = []
-# YFat = []
-# ZFat = []
-# for x, y, z in zip(fatSurfaceX, fatSurfaceY, fatSurfaceZ):
-#     xf, yf, zf = splineTools.fitSplineOpen3D(x, y, z, numSlices, numPointsPerContour)
-#     XFat.append(xf)
-#     YFat.append(yf)
-#     ZFat.append(zf)
-
 # plot control points and the surface on the same plot
 fig = plt.figure()
 ax = fig.gca(projection='3d')
@@ -368,22 +371,22 @@ ax.set_ylim(minY, maxY)
 ax.set_zlim(minZ, maxZ)
 
 # plot control points
-#ax.scatter(Vx, Vy, Vz, s=4)
+ax.scatter(Vx, Vy, Vz, s=4)
 
 # add horizontal connections
-# for i in range(numControlPointsV):
-#     ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
-#
-# # add vertical connections
-# for i in range(numCalcControlPointsU):
-#     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
+for i in range(numControlPointsV):
+    ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
+
+# add vertical connections
+for i in range(numCalcControlPointsU):
+    ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
 
 # plot the surface
-#ax.plot_surface(X, Y, Z)
+ax.plot_surface(X, Y, Z)
 
-# plot the fat surface
-ax.plot_surface(XFat, YFat, ZFat)
+# plot the fat surfaces
+for i in range(len(fatDepositsX)):
+    ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i])
 
-# display the plot with both surfaces on it
 plt.show()
 

@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
 from scipy.spatial import KDTree
+from skimage import measure
 import time
 
 # this function performs a polar reordering of points
@@ -54,6 +55,27 @@ def parameterizeClosedCurve(points, knots, degree):
         distance = np.sqrt((points[j][0] - points[j-1][0])**2 + (points[j][1] - points[j-1][1])**2)
         cumDist += distance
         parameters[j] = (cumDist / totalDist)*paramLength + firstKnot
+
+    return parameters
+
+def parameterizeOpenCurve(points):
+
+    numPoints = len(points)
+    parameters = np.zeros((1, numPoints))
+
+    totalDist = 0
+    for i in range(numPoints):
+        xPart = (points[0, i+1] - points[0, i])**2
+        yPart = (points[1, i+1] - points[1, i])**2
+        totalDist += np.sqrt(xPart + yPart)
+
+    parameters[0] = 0
+    cumDist = 0
+    for i in range(1, numPoints):
+        xPart = (points[0, i] - points[0, i-1])**2
+        yPart = (points[1, i] - points[1, i-1])**2
+        cumDist += np.sqrt(xPart + yPart)
+        parameters[i] = cumDist / totalDist
 
     return parameters
 
@@ -289,6 +311,45 @@ def fitSplineClosed2D(points, numControlPoints, degree):
 
     return b, tau, errorInFit
 
+def fitSplineOpen2D(points, numControlPoints, degree):
+
+    numDataPoints = len(points)
+
+    # get parameterization for curve
+    t = parameterizeOpenCurve(points)
+
+    # generate the knots (m = n + d + 1)
+    numKnots = ((numControlPoints-1) + degree + 1) + 1
+    tau = np.zeros((1, numKnots))
+    tau[degree:(numKnots-degree)] = np.linspace(0, 1, numKnots-2*degree)
+    tau[-degree] = np.ones((1,degree))
+
+    # p will be (numDataPoints * 2)
+    p_mat = np.transpose(points)
+
+    # A matrix will be (numDataPoints * numControlPoints)
+    A_mat = np.zeros((numDataPoints, numControlPoints))
+    for j in range(numDataPoints):
+        for i in range(numControlPoints):
+            A_mat[j, i] = NVal(tau, t[j], i-1, degree, 0)
+
+    # solve matrix equations for control points
+    b_mat = np.linalg.lstsq(A_mat, p_mat)[0]
+    b = np.tranpose(b_mat)
+
+    # use the control points to create the spline
+    interpCurve = BSVal(b, tau, t, 0)
+
+    # calculate the error in the fit
+    try:
+        errorVector = interpCurve - points
+    except ValueError:
+        errorVector = interpCurve - np.transpose(points)
+
+    errorInFit = np.sum(errorVector[0, :] ** 2 + errorVector[1, :] ** 2)
+
+    return b, tau, errorInFit
+
 def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, degree):
 
     # data is returned in 3 matrices, each with 'numSlices' rows
@@ -312,8 +373,11 @@ def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, deg
     for i in range(numSlices):
         # set up this array of points
         points = np.zeros((numPointsEachContour[i], 2))
-        points[:, 0] = X[i, 0:numPointsEachContour[i]]
-        points[:, 1] = Y[i, 0:numPointsEachContour[i]]
+        # points[:, 0] = X[i, 0:numPointsEachContour[i]]
+        # points[:, 1] = Y[i, 0:numPointsEachContour[i]]
+
+        points[:, 0] = X[i, X[i] != 0]
+        points[:, 1] = Y[i, Y[i] != 0]
 
         # call the fitting function
         b, tau, errorInFit = fitSplineClosed2D(points, numControlPoints, degree)
@@ -321,7 +385,7 @@ def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, deg
 
         # determine the support of the spline in the parameterization
         firstKnot = tau[degree]
-        lastKnot = tau[len(tau) - degree - 1]
+        lastKnot = tau[-degree-1]
 
         # use uniform parameterization for the resampling
         t = np.linspace(firstKnot, lastKnot, numPointsPerContour)
@@ -450,7 +514,7 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 
     fatSurfaceX = np.zeros((numSlices, numPointsPerContour - 1))
     fatSurfaceY = np.zeros((numSlices, numPointsPerContour - 1))
-    fatSurfaceZ = Z
+    fatSurfaceZ = Z[:, :numPointsPerContour - 1]
     for i in range(numSlices):
         for j in range(numPointsPerContour - 1):
             if thicknessByPoint[i, j] == 0:
@@ -470,55 +534,40 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 
     return fatSurfaceX, fatSurfaceY, fatSurfaceZ
 
-# pair normal vectors with their closest counterparts to streamline fat deposit segmentation
-def pairNormalVectors(X, Y, crossX, crossY, numSlices, numPointsPerContour):
-    sortedX = np.zeros((numSlices, numPointsPerContour))
-    sortedY = np.zeros((numSlices, numPointsPerContour))
-    sortedCrossX = np.zeros((numSlices, numPointsPerContour - 1))
-    sortedCrossY = np.zeros((numSlices, numPointsPerContour - 1))
-
-    # lock in bottom slice - subsequent layers will have vectors paired based on this slice
-    sortedX[0] = X[0]
-    sortedY[0] = Y[0]
-    sortedCrossX[0] = crossX[0]
-    sortedCrossY[0] = crossY[0]
-
-    currentSlice = np.column_stack((X[0, :numPointsPerContour-1], Y[0, :numPointsPerContour-1]))
-    for i in range(1, numSlices):
-        nextSlice = np.column_stack((X[i, :numPointsPerContour-1], Y[i, :numPointsPerContour-1]))
-        tree = KDTree(nextSlice)
-        indices = tree.query(currentSlice)[1]
-        for j in range(numPointsPerContour - 1):
-            sortedX[i, j] = X[i, indices[j]]
-            sortedY[i, j] = Y[i, indices[j]]
-            sortedCrossX[i, j] = crossX[i, indices[j]]
-            sortedCrossY[i, j] = crossY[i, indices[j]]
-        currentSlice = nextSlice
-
-    return sortedX, sortedY, sortedCrossX, sortedCrossY
 # generate a list of fat deposits to create a collection of fat splines that reflect the non-continuous nature
 # of fat surrounding the myocardium
-def getFatDeposits(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
-    # create empty lists for holding fat information
-    fatSurfaceX = []
-    fatSurfaceY = []
-    fatSurfaceZ = []
-    for i in range(numSlices):
-        sliceDepositCount = 0
-        for j in range(numPointsPerContour - 1):
-            if thicknessByPoint[i, j] == 0 and thicknessByPoint[i, j-1] == 0:
-                pass
-            if thicknessByPoint[i, j] != 0 and thicknessByPoint[i, j-1] == 0:
-                sliceDepositCount += 1
-                depositStart = j
-                print("deposit {} on slice {} starts at {}".format(sliceDepositCount, numSlices, depositStart))
-            elif thicknessByPoint[i, j] == 0 and thicknessByPoint[i, j-1] != 0:
-                depositEnd = j - 1
-                print("deposit {} on slice {} ends at {}".format(sliceDepositCount, numSlices, depositEnd))
+def getFatDeposits(thicknessByPoint, numSlices):
+    # create binarized version of thickness array for segmentation purposes
+    thicknessBinary = np.copy(thicknessByPoint)
+    thicknessBinary[thicknessBinary > 0] = 255
 
+    # isolate fat deposits and "label" them with different numeric values to differentiate them
+    fatDeposits = thicknessBinary > thicknessBinary.mean()
+    all_labels = measure.label(fatDeposits)
+    deposit_labels = measure.label(fatDeposits, background=0)
+
+    # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
+    for i in range(numSlices):
+        if deposit_labels[i, 0] != 0 and deposit_labels[i, -1] != 0:
+            obj = deposit_labels[i, -1]
+            deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
+
+    # get the number of segmented deposits
+    numDeposits = np.amax(deposit_labels)
+
+    return deposit_labels, numDeposits
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
-def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
+def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
+    # resample the data so each slice has the same number of points
+    # do this by fitting each slice with B-spline curve
+
+    # TODO define this to reflect the number of fat points in each slice of a given deposit
+
+    resampleNumControlPoints = 7
+    degree = 3
+    resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+        reSampleAndSmoothPoints(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
     # set up parameters for spline fit
     numControlPointsU = 6
     numControlPointsV = 6
@@ -548,7 +597,7 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
 
     # TODO decide if this is correct!
     # set up parameterization
-    U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(fatX, fatY, fatZ, tauU, tauV, degree)
+    U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ, tauU, tauV, degree)
 
     # apply offset to V so that highest value in parameterization is 1.00
     offset = 1.00 - V[-1, 0]
@@ -572,9 +621,9 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsPerContour):
 
 
     # now set up Px, Py, and Pz matrices
-    Px = np.transpose(fatX)
-    Py = np.transpose(fatY)
-    Pz = np.transpose(fatZ)
+    Px = np.transpose(resampX)
+    Py = np.transpose(resampY)
+    Pz = np.transpose(resampZ)
 
     # calculate pseudo-inverses of B and C for use in generating control points
     pinvB = np.linalg.pinv(B)
