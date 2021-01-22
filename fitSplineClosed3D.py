@@ -1,19 +1,26 @@
 import numpy as np
 import matplotlib
+import SimpleITK as sitk
+from skimage.filters import threshold_otsu
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+import mpl_toolkits.mplot3d.art3d as art3d
 import time
 
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-POST/outsidePoints/fat_slice_'
-startFrame = 3
-stopFrame = 8
+# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
+
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
+startFrame = 2
+stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -259,8 +266,7 @@ fatX, fatY, fatZ, numFatPointsPerSlice = splineTools.readSlicePoints(fatName, st
 ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
 
 # generate normal vectors
-crossX, crossY, crossZ = splineTools.simpleNormalVectors(X, Y, Z, numPointsPerContour, numSlices)
-#ax.quiver(X, Y, Z, crossX, crossY, crossZ, length=10, color='purple', arrow_length_ratio=0.1)
+crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z, numPointsPerContour, numSlices)
 
 # measure fat thickness at each normal vector
 thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
@@ -271,66 +277,50 @@ thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y,
 fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
                                                                         Z, numSlices, numPointsPerContour)
 
+
+ax.scatter(fatSurfaceX, fatSurfaceY, fatSurfaceZ, marker='s', s=4, c='black')
+plt.show()
+
 # generate an array that groups areas of nonzero fat thickness into separate fat deposits
 deposits, numDeposits = splineTools.getFatDeposits(thicknessByPoint, numSlices)
 
-# plot the thickness array as a heatmap
-fig = plt.figure()
-fig.add_subplot(2, 1, 1)
-plt.imshow(thicknessByPoint, cmap='hot')
-plt.title('Fat map')
-plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
-plt.ylabel('Elevation ({})'.format(numSlices))
-plt.colorbar()
+# create arrays for appropriately spaced stem plot of fat thicknesses
+x = np.linspace(0, numSlices - 1, numSlices)
+x = 10 * np.transpose(np.tile(x, (numPointsPerContour - 1, 1)))
+y = np.linspace(0, numPointsPerContour - 1, numPointsPerContour)
+y = np.tile(y, (numSlices, 1))
+y = np.delete(y, -1, 1)
 
-# plot the segmentation output
-fig.add_subplot(2, 1, 2)
-plt.imshow(deposits, cmap='hot')
-plt.title('Fat deposit segmentation')
-plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
-plt.ylabel('Elevation ({})'.format(numSlices))
-plt.colorbar()
+# create stem plot of fat thickness
+fig = plt.figure()
+ax = fig.add_subplot(1, 2, 1, projection='3d')
+ax.plot_surface(x, y, thicknessByPoint)
+ax.set_xlabel('Slice level')
+ax.set_ylabel('Azimuth')
+ax.set_zlabel('Fat thickness')
 plt.show()
 
-# loop through each deposit and generate a spline surface for that deposit if it is sufficiently large
-# TODO figure out how to handle very small deposits/deposits that appear on only one slice
-fatDepositsX = []
-fatDepositsY = []
-fatDepositsZ = []
-for i in range(1, numDeposits + 1):
-    # copy fat surface points into array
-    currentDepositX = np.copy(fatSurfaceX)
-    currentDepositY = np.copy(fatSurfaceY)
-    currentDepositZ = np.copy(fatSurfaceZ)
+# # plot the thickness array as a heatmap
+# fig = plt.figure()
+# fig.add_subplot(2, 1, 1)
+# plt.imshow(thicknessByPoint, cmap='hot')
+# plt.title('Fat map')
+# plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
+# plt.ylabel('Elevation ({})'.format(numSlices))
+# plt.colorbar()
+#
+# # plot the segmentation output
+# fig.add_subplot(2, 1, 2)
+# plt.imshow(deposits, cmap='hot')
+# plt.title('Fat deposit segmentation')
+# plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
+# plt.ylabel('Elevation ({})'.format(numSlices))
+# plt.colorbar()
+# plt.show()
 
-    # remove points not corresponding with the current deposit
-    currentDepositX[deposits != i] = 0
-    currentDepositY[deposits != i] = 0
-
-    # get number of nonzero points in each slice
-    numPointsEachContour = (currentDepositX != 0).sum(1)
-
-    # trim fat deposit array down to only include slices with nonzero thickness values
-    currentDepositX = currentDepositX[numPointsEachContour != 0, :]
-    currentDepositY = currentDepositY[numPointsEachContour != 0, :]
-    currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
-
-    numSlicesNonZero = 0
-    for j in numPointsEachContour:
-        if j > 0:
-            numSlicesNonZero += 1
-
-    # only generate a spline surface if multiple slices have points for that deposit. Otherwise won't work
-    if numSlicesNonZero > 1:
-        # generate spline surface for the current fat deposit
-
-        depositPointsEachContour = numPointsEachContour[numPointsEachContour > 0]
-        depositSplineX, depositSplineY, depositSplineZ = splineTools.fitSplineOpen3D(currentDepositX, currentDepositY,
-                                                                                     currentDepositZ, numSlicesNonZero,
-                                                                                     depositPointsEachContour)
-        fatDepositsX.append(depositSplineX)
-        fatDepositsY.append(depositSplineY)
-        fatDepositsZ.append(depositSplineZ)
+# create individual B-spline curves representing each of the fat deposits
+fatDepositsX, fatDepositsY, fatDepositsZ = splineTools.generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY,
+                                                                                 fatSurfaceZ, deposits, numDeposits)
 
 # # plot each normal vector one at a time along with the fat points associated with it
 # for i in range(numSlices):
@@ -381,12 +371,13 @@ for i in range(numControlPointsV):
 for i in range(numCalcControlPointsU):
     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
 
-# plot the surface
+# plot the myocardium surface
 ax.plot_surface(X, Y, Z)
 
 # plot the fat surfaces
 for i in range(len(fatDepositsX)):
-    ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i])
+    ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
 
+# show plot with fat surfaces
 plt.show()
 

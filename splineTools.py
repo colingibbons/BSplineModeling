@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
-from scipy.spatial import KDTree
 from skimage import measure
 import time
 
@@ -38,7 +37,7 @@ def parameterizeClosedCurve(points, knots, degree):
     # calculate the total distance
     totalDist = 0
     for i in range(numPoints - 1):
-        distance = np.sqrt((points[i+1][0] - points[i][0])**2 + (points[i+1][1] - points[i][1])**2)
+        distance = np.sqrt((points[i+1, 0] - points[i, 0])**2 + (points[i+1, 1] - points[i, 1])**2)
         totalDist += distance
 
     # get the first and last valid knots
@@ -52,7 +51,7 @@ def parameterizeClosedCurve(points, knots, degree):
     parameters[0] = firstKnot
     cumDist = 0
     for j in range(1, numPoints):
-        distance = np.sqrt((points[j][0] - points[j-1][0])**2 + (points[j][1] - points[j-1][1])**2)
+        distance = np.sqrt((points[j, 0] - points[j-1, 0])**2 + (points[j, 1] - points[j-1, 1])**2)
         cumDist += distance
         parameters[j] = (cumDist / totalDist)*paramLength + firstKnot
 
@@ -61,19 +60,19 @@ def parameterizeClosedCurve(points, knots, degree):
 def parameterizeOpenCurve(points):
 
     numPoints = len(points)
-    parameters = np.zeros((1, numPoints))
+    parameters = np.zeros(numPoints)
 
     totalDist = 0
-    for i in range(numPoints):
-        xPart = (points[0, i+1] - points[0, i])**2
-        yPart = (points[1, i+1] - points[1, i])**2
+    for i in range(numPoints - 1):
+        xPart = (points[i+1, 0] - points[i, 0])**2
+        yPart = (points[i+1, 1] - points[i, 1])**2
         totalDist += np.sqrt(xPart + yPart)
 
     parameters[0] = 0
     cumDist = 0
     for i in range(1, numPoints):
-        xPart = (points[0, i] - points[0, i-1])**2
-        yPart = (points[1, i] - points[1, i-1])**2
+        xPart = (points[i, 0] - points[i-1, 0])**2
+        yPart = (points[i, 1] - points[i-1, 1])**2
         cumDist += np.sqrt(xPart + yPart)
         parameters[i] = cumDist / totalDist
 
@@ -266,7 +265,7 @@ def fitSplineClosed2D(points, numControlPoints, degree):
 
     # generate the knots (numKnots = n + 2d + 2)
     numKnots = n + 2 * degree + 2
-    tau = np.zeros((numKnots))
+    tau = np.zeros(numKnots)
     numOpenKnots = n + degree + 1
     tau[0:numOpenKnots] += np.linspace(0, 1, numOpenKnots)
     for i in range(0, degree + 1):
@@ -319,10 +318,8 @@ def fitSplineOpen2D(points, numControlPoints, degree):
     t = parameterizeOpenCurve(points)
 
     # generate the knots (m = n + d + 1)
-    numKnots = ((numControlPoints-1) + degree + 1) + 1
-    tau = np.zeros((1, numKnots))
-    tau[degree:(numKnots-degree)] = np.linspace(0, 1, numKnots-2*degree)
-    tau[-degree] = np.ones((1,degree))
+    numKnots = ((numControlPoints-1) + degree + 1)
+    tau = np.linspace(0, 1, numKnots)
 
     # p will be (numDataPoints * 2)
     p_mat = np.transpose(points)
@@ -350,6 +347,7 @@ def fitSplineOpen2D(points, numControlPoints, degree):
 
     return b, tau, errorInFit
 
+# resamples points for a closed spline fit such that an equal number of points are present in each slice
 def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, degree):
 
     # data is returned in 3 matrices, each with 'numSlices' rows
@@ -404,38 +402,62 @@ def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, deg
 
     return newX, newY, newZ, newXControl, newYControl, newZControl, numPointsPerContour, totalError
 
-# this function generates normal vectors for points on the surface using the cross-product
-# TODO vectors generated for some cases are not actually normal to surface
-def generateNormalVectors(X, Y, Z):
+# resamples points for an open spline curve such that an equal number of points are present in each slice
+def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints, degree):
 
-    g, f = np.shape(X)
-    crossX = np.zeros((g-1, f-1))
-    crossY = np.zeros((g-1, f-1))
-    crossZ = np.zeros((g-1, f-1))
+    # data is returned in 3 matrices, each with 'numSlices' rows
+    # number of columns is what the data was resampled to
 
-    for i in range(g - 1):
-        for j in range(f - 1):
-            # starting vector
-            vector1 = (X[i, j], Y[i, j], Z[i, j])
-            # u differential
-            vector2 = (X[i + 1, j], Y[i + 1, j], Z[i + 1, j])
-            uDer = np.subtract(vector2, vector1)
-            # v differential
-            vector3 = (X[i, j + 1], Y[i, j + 1], Z[i, j + 1])
-            vDer = np.subtract(vector3, vector1)
+    # allocate for control points and new data
+    numPointsPerContour = max(numPointsEachContour)
+    numSlices = np.size(X, 0)
+    newX = np.zeros((numSlices, numPointsPerContour))
+    newY = np.zeros((numSlices, numPointsPerContour))
+    newZ = np.zeros((numSlices, numPointsPerContour))
 
-            # compute cross product and display vector direction as arrow
-            crossVector = np.cross(vDer, uDer)
+    newXControl = np.zeros((numSlices, numControlPoints))
+    newYControl = np.zeros((numSlices, numControlPoints))
+    newZControl = np.zeros((numSlices, numControlPoints))
 
-            crossX[i, j] = crossVector[0]
-            crossY[i, j] = crossVector[1]
-            crossZ[i, j] = crossVector[2]
+    # now loop through the slices and fit each with a cubic B-spline curve
+    totalError = 0
+    for i in range(numSlices):
+        # set up this array of points
+        points = np.zeros((numPointsEachContour[i], 2))
+        # points[:, 0] = X[i, 0:numPointsEachContour[i]]
+        # points[:, 1] = Y[i, 0:numPointsEachContour[i]]
 
-    return crossX, crossY, crossZ
+        points[:, 0] = X[i, X[i] != 0]
+        points[:, 1] = Y[i, Y[i] != 0]
+
+        # call the fitting function
+        b, tau, errorInFit = fitSplineOpen2D(points, numControlPoints, degree)
+        totalError += errorInFit
+
+        # determine the support of the spline in the parameterization
+        firstKnot = tau[degree]
+        lastKnot = tau[-degree-1]
+
+        # use uniform parameterization for the resampling
+        t = np.linspace(firstKnot, lastKnot, numPointsPerContour)
+
+        # calculate the new points
+        interpCurve = BSVal(b, tau, t, 0)
+
+        # put points in out arrays
+        newX[i, 0:numPointsPerContour] = interpCurve[0, :]
+        newY[i, 0:numPointsPerContour] = interpCurve[1, :]
+        newZ[i, 0:numPointsPerContour] = Z[i, 0]
+
+        newXControl[i, :] = b[0, :]
+        newYControl[i, :] = b[1, :]
+        newZControl[i, :] = Z[i, 0]
+
+    return newX, newY, newZ, newXControl, newYControl, newZControl, numPointsPerContour, totalError
 
 # this function generates "normal vectors" that hard-codes the Z component of each normal vector as 0, such that
 # the fat thickness in each (2D) slice can be assessed
-def simpleNormalVectors(X, Y, Z, numPointsPerContour, numSlices):
+def generateNormalVectors(X, Y, Z, numPointsPerContour, numSlices):
 
     crossX = np.zeros((numSlices, numPointsPerContour - 1))
     crossY = np.zeros((numSlices, numPointsPerContour - 1))
@@ -517,20 +539,21 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
     fatSurfaceZ = Z[:, :numPointsPerContour - 1]
     for i in range(numSlices):
         for j in range(numPointsPerContour - 1):
+            surfacePoint = (X[i, j], Y[i, j])
             if thicknessByPoint[i, j] == 0:
                 fatSurfaceX[i, j] = X[i, j]
                 fatSurfaceY[i, j] = Y[i, j]
             else:
+                dist = 0
                 for x, y in zip(xFatPoints[i, j, :], yFatPoints[i, j, :]):
                     if x == y == -1:
                         pass
                     else:
-                        surfacePoint = (X[i, j], Y[i, j])
-                        dist = 0
                         fatDist = abs(euclidean(surfacePoint, (x, y)))
                         if fatDist > dist:
                             fatSurfaceX[i, j] = x
                             fatSurfaceY[i, j] = y
+                            dist = fatDist
 
     return fatSurfaceX, fatSurfaceY, fatSurfaceZ
 
@@ -543,17 +566,13 @@ def getFatDeposits(thicknessByPoint, numSlices):
 
     # isolate fat deposits and "label" them with different numeric values to differentiate them
     fatDeposits = thicknessBinary > thicknessBinary.mean()
-    all_labels = measure.label(fatDeposits)
-    deposit_labels = measure.label(fatDeposits, background=0)
+    deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
 
     # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
     for i in range(numSlices):
         if deposit_labels[i, 0] != 0 and deposit_labels[i, -1] != 0:
             obj = deposit_labels[i, -1]
             deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
-
-    # get the number of segmented deposits
-    numDeposits = np.amax(deposit_labels)
 
     return deposit_labels, numDeposits
 
@@ -563,11 +582,10 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     # do this by fitting each slice with B-spline curve
 
     # TODO define this to reflect the number of fat points in each slice of a given deposit
-
-    resampleNumControlPoints = 7
+    resampleNumControlPoints = 4
     degree = 3
     resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-        reSampleAndSmoothPoints(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
+        reSampleAndSmoothPointsOpen(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
     # set up parameters for spline fit
     numControlPointsU = 6
     numControlPointsV = 6
@@ -646,3 +664,69 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
     return X, Y, Z
+
+def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, deposits, numDeposits):
+    # loop through each deposit and generate a spline surface for that deposit if it is sufficiently large
+    # TODO figure out how to handle very small deposits/deposits that appear on only one slice
+    fatDepositsX = []
+    fatDepositsY = []
+    fatDepositsZ = []
+    for i in range(1, numDeposits + 1):
+        # copy fat surface points into array
+        currentDepositX = np.copy(fatSurfaceX)
+        currentDepositY = np.copy(fatSurfaceY)
+        currentDepositZ = np.copy(fatSurfaceZ)
+
+        # copy myocardium points for use in completing the b-spline surface
+        myoPointsX = np.copy(X)
+        myoPointsY = np.copy(Y)
+        myoPointsZ = np.copy(Z)
+
+        # remove last column of each array (last surface point is repeat of first)
+        myoPointsX = np.delete(myoPointsX, -1, 1)
+        myoPointsY = np.delete(myoPointsY, -1, 1)
+        myoPointsZ = np.delete(myoPointsZ, -1, 1)
+
+        # remove points not corresponding with the current deposit from both sets of arrays
+        currentDepositX[deposits != i] = 0
+        currentDepositY[deposits != i] = 0
+
+        myoPointsX[deposits != i] = 0
+        myoPointsY[deposits != i] = 0
+
+        # get number of nonzero points in each slice
+        numPointsEachContour = (currentDepositX != 0).sum(1)
+
+        # trim fat deposit array down to only include slices with nonzero thickness values
+        currentDepositX = currentDepositX[numPointsEachContour != 0, :]
+        currentDepositY = currentDepositY[numPointsEachContour != 0, :]
+        currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
+
+        # trim myo array to only include surface points whose normal vectors have fat deposits
+        myoPointsX = myoPointsX[numPointsEachContour != 0, :]
+        myoPointsY = myoPointsY[numPointsEachContour != 0, :]
+        myoPointsZ = myoPointsZ[numPointsEachContour != 0, :]
+
+        currentDepositX = np.concatenate((currentDepositX, myoPointsX), axis=1)
+        currentDepositY = np.concatenate((currentDepositY, myoPointsY), axis=1)
+        currentDepositZ = np.concatenate((currentDepositZ, myoPointsZ), axis=1)
+
+        numSlicesNonZero = 0
+        for j in numPointsEachContour:
+            if j > 0:
+                numSlicesNonZero += 1
+
+        # only generate a spline surface if multiple slices have points for that deposit. Otherwise won't work
+        if numSlicesNonZero > 1:
+            # generate spline surface for the current fat deposit
+
+            depositPointsEachContour = 2 * numPointsEachContour[numPointsEachContour > 0]
+            depositSplineX, depositSplineY, depositSplineZ = fitSplineOpen3D(currentDepositX, currentDepositY,
+                                                                             currentDepositZ, numSlicesNonZero,
+                                                                             depositPointsEachContour)
+            fatDepositsX.append(depositSplineX)
+            fatDepositsY.append(depositSplineY)
+            fatDepositsZ.append(depositSplineZ)
+
+    return fatDepositsX, fatDepositsY, fatDepositsZ
+
