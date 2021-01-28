@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # hard code file path for now
-filePath = "C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_2.txt"
+filePath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_4.txt'
 
 # read points from file
 points = np.loadtxt(filePath)
@@ -62,7 +62,7 @@ interpCurve = splineTools.BSVal(b, tau, t, 0)
 
 # plot everything
 plt.plot(orderedPoints[:, 0], orderedPoints[:, 1], 'x', b[0, :], b[1, :], 'o', interpCurve[0, :], interpCurve[1, :])
-plt.title('Outside points b-spline fit')
+plt.title('Outside points b-spline fit, single slice')
 plt.legend(('data points', 'control points', 'B-spline curve'))
 plt.xlim((min(b[0, :])-10, max(b[0, :])+10))
 plt.ylim((min(b[1, :])-10, max(b[1, :])+10))

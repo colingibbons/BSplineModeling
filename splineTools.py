@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
 from skimage import measure
+from skimage import segmentation
 import time
 
 # this function performs a polar reordering of points
@@ -314,30 +315,46 @@ def fitSplineOpen2D(points, numControlPoints, degree):
 
     numDataPoints = len(points)
 
-    # get parameterization for curve
-    t = parameterizeOpenCurve(points)
+    # set up parameters for spline fit
+    n = numControlPoints - 1
+    numCalcControlPoints = numControlPoints + degree
 
-    # generate the knots (m = n + d + 1)
-    numKnots = ((numControlPoints-1) + degree + 1)
-    tau = np.linspace(0, 1, numKnots)
+    # generate the knots (numKnots = n + 2d + 2)
+    numKnots = n + (2 * degree) + 2
+    tau = np.zeros(numKnots)
+    numOpenKnots = numKnots - (2*degree)
+    tau[degree:-degree] = np.linspace(0, 1, numOpenKnots)
+    tau[-degree:] = 1
 
-    # p will be (numDataPoints * 2)
+    # set up parameterization
+    t = parameterizeClosedCurve(points, tau, degree)
+
     p_mat = np.transpose(points)
+    A_mat = np.zeros((numDataPoints, numCalcControlPoints))
 
-    # A matrix will be (numDataPoints * numControlPoints)
-    A_mat = np.zeros((numDataPoints, numControlPoints))
     for j in range(numDataPoints):
-        for i in range(numControlPoints):
-            A_mat[j, i] = NVal(tau, t[j], i-1, degree, 0)
+        for k in range(numCalcControlPoints):
+            A_mat[j][k] = NVal(tau, t[j], k - 1, degree, 0)
+
+    # create a constrained A matrix
+    A_mat_con = A_mat
+    A_mat_con[:, 0:degree] = A_mat_con[:, 0:degree] + A_mat_con[:, (numCalcControlPoints - degree):numCalcControlPoints]
+    temp_A_mat_con = A_mat_con[:, 0:numControlPoints]
+    A_mat_con = temp_A_mat_con
 
     # solve matrix equations for control points
-    b_mat = np.linalg.lstsq(A_mat, p_mat)[0]
-    b = np.tranpose(b_mat)
+    b_mat = np.linalg.lstsq(A_mat_con, points)[0]
+    b = np.transpose(b_mat)
 
-    # use the control points to create the spline
+    # duplicate last 'degree' control points
+    new_b = np.zeros((2, numCalcControlPoints))
+    new_b[:, 0:numControlPoints] = b
+    new_b[:, numControlPoints:numControlPoints + degree] = b[:, 0:degree]
+    b = new_b
+
+    # calculate the spline
     interpCurve = BSVal(b, tau, t, 0)
 
-    # calculate the error in the fit
     try:
         errorVector = interpCurve - points
     except ValueError:
@@ -402,7 +419,6 @@ def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, deg
 
     return newX, newY, newZ, newXControl, newYControl, newZControl, numPointsPerContour, totalError
 
-# resamples points for an open spline curve such that an equal number of points are present in each slice
 def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints, degree):
 
     # data is returned in 3 matrices, each with 'numSlices' rows
@@ -415,9 +431,11 @@ def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints,
     newY = np.zeros((numSlices, numPointsPerContour))
     newZ = np.zeros((numSlices, numPointsPerContour))
 
-    newXControl = np.zeros((numSlices, numControlPoints))
-    newYControl = np.zeros((numSlices, numControlPoints))
-    newZControl = np.zeros((numSlices, numControlPoints))
+    # number of control points for a closed curve is increased by degree of curve
+    numCalcControlPoints = numControlPoints + degree
+    newXControl = np.zeros((numSlices, numCalcControlPoints))
+    newYControl = np.zeros((numSlices, numCalcControlPoints))
+    newZControl = np.zeros((numSlices, numCalcControlPoints))
 
     # now loop through the slices and fit each with a cubic B-spline curve
     totalError = 0
@@ -568,6 +586,9 @@ def getFatDeposits(thicknessByPoint, numSlices):
     fatDeposits = thicknessBinary > thicknessBinary.mean()
     deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
 
+    # consider this as an alternative
+    #deposit_labels = segmentation.watershed(thicknessByPoint, 15, mask=thicknessBinary)
+
     # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
     for i in range(numSlices):
         if deposit_labels[i, 0] != 0 and deposit_labels[i, -1] != 0:
@@ -575,6 +596,102 @@ def getFatDeposits(thicknessByPoint, numSlices):
             deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
 
     return deposit_labels, numDeposits
+
+# This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
+# but closed "around" the heart
+def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV, degree, numPointsPerContour,
+                      numSlices):
+    numCalcControlPointsU = numControlPointsU + degree
+    m = numControlPointsU - 1
+    n = numControlPointsV - 1
+    M = numPointsPerContour - 1
+    N = numSlices - 1
+
+    # Figure out what set of two knots will be for u parameter direction (around each contour)
+    numKnotsU = m + 2 * degree + 2
+    tauU = np.zeros(numKnotsU)
+    numOpenKnotsU = m + degree + 1
+    tauU[0:numOpenKnotsU] = np.linspace(0, 1, numOpenKnotsU)
+    for i in range(degree + 1):
+        diff = tauU[i + 1] - tauU[i]
+        tauU[numOpenKnotsU + i] = tauU[numOpenKnotsU + i - 1] + diff
+
+    numKnotsV = n + degree + 2
+    numInteriorKnotsV = numKnotsV - 2 * degree
+    tauV = np.zeros(numKnotsV)
+    tauV[degree:numInteriorKnotsV + degree] = np.linspace(0, 1, numInteriorKnotsV)
+    tauV[numInteriorKnotsV + degree:numKnotsV] = np.ones(degree)
+
+    # set up parameterization
+    U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ,
+                                                                                      tauU, tauV, degree)
+
+    # now we need to set up matrices to solve for mesh of control points
+    # (B*V*T^T = P)
+
+    # set up B matrix
+    B = np.zeros((M + 1, numCalcControlPointsU))
+    for r in range(M + 1):
+        for i in range(numCalcControlPointsU):
+            uVal = U[0, r]
+            B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
+
+    # set up C matrix
+    C = np.zeros((N + 1, n + 1))
+    for s in range(N + 1):
+        for j in range(n + 1):
+            vVal = V[s, 0]
+            C[s, j] = NVal(tauV, vVal, j - 1, degree, 0)
+
+    # now set up Px, Py, and Pz matrices
+    Px = np.transpose(resampX)
+    Py = np.transpose(resampY)
+    Pz = np.transpose(resampZ)
+
+    # constrain the B matrix so last three control points of each slice
+    # equal the first three (for cubic)
+    B_con = B
+    B_con[:, 0:degree] = B_con[:, 0:degree] + B_con[:, numCalcControlPointsU - degree:numCalcControlPointsU]
+    B_con = B_con[:, 0:numControlPointsU]
+
+    # calculate pseudo-inverses of B_con and C for use in generating control points
+    pinvB = np.linalg.pinv(B_con)
+    pinvC = np.linalg.pinv(np.transpose(C))
+
+    # solve for control points
+    Vx = np.matmul(pinvB, Px)
+    Vx = np.transpose(np.matmul(Vx, pinvC))
+
+    Vy = np.matmul(pinvB, Py)
+    Vy = np.transpose(np.matmul(Vy, pinvC))
+
+    Vz = np.matmul(pinvB, Pz)
+    Vz = np.transpose(np.matmul(Vz, pinvC))
+
+    # duplicate last 'degree' control points
+    newVx = np.zeros((numControlPointsV, numCalcControlPointsU))
+    newVy = np.zeros((numControlPointsV, numCalcControlPointsU))
+    newVz = np.zeros((numControlPointsV, numCalcControlPointsU))
+
+    newVx[:, 0:numControlPointsU] = Vx
+    newVy[:, 0:numControlPointsU] = Vy
+    newVz[:, 0:numControlPointsU] = Vz
+
+    newVx[:, numControlPointsU:numCalcControlPointsU] = Vx[:, 0:degree]
+    newVy[:, numControlPointsU:numCalcControlPointsU] = Vy[:, 0:degree]
+    newVz[:, numControlPointsU:numCalcControlPointsU] = Vz[:, 0:degree]
+
+    Vx = newVx
+    Vy = newVy
+    Vz = newVz
+
+    # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
+    startTime = time.perf_counter()
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
+    stopTime = time.perf_counter()
+    print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
+
+    return X, Y, Z, Vx, Vy, Vz
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
 def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
@@ -586,6 +703,7 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     degree = 3
     resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
         reSampleAndSmoothPointsOpen(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
+
     # set up parameters for spline fit
     numControlPointsU = 6
     numControlPointsV = 6
@@ -597,29 +715,21 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     M = numPointsPerContour - 1
     N = numSlices - 1
 
-    numKnotsU = m + 2 * degree + 2
+    # generate the knots (numKnots = n + 2d + 2)
+    numKnotsU = m + (2*degree) + 2
     tauU = np.zeros(numKnotsU)
-    numOpenKnotsU = m + degree + 1
-    tauU[0:numOpenKnotsU] = np.linspace(0, 1, numOpenKnotsU)
-    for i in range(degree + 1):
-        diff = tauU[i + 1] - tauU[i]
-        tauU[numOpenKnotsU + i] = tauU[numOpenKnotsU + i - 1] + diff
+    numOpenKnotsU = numKnotsU - (2*degree)
+    tauU[degree:-degree] = np.linspace(0, 1, numOpenKnotsU)
+    tauU[-degree:] = 1
 
     numKnotsV = n + 2 * degree + 2
     tauV = np.zeros(numKnotsV)
-    numOpenKnotsV = n + degree + 1
-    tauV[0:numOpenKnotsV] = np.linspace(0, 1, numOpenKnotsV)
-    for i in range(degree + 1):
-        diff = tauV[i + 1] - tauV[i]
-        tauV[numOpenKnotsV + i] = tauV[numOpenKnotsV + i - 1] + diff
+    numOpenKnotsV = numKnotsV - (2*degree)
+    tauV[degree:-degree] = np.linspace(0, 1, numOpenKnotsV)
+    tauV[-degree:] = 1
 
-    # TODO decide if this is correct!
     # set up parameterization
     U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ, tauU, tauV, degree)
-
-    # apply offset to V so that highest value in parameterization is 1.00
-    offset = 1.00 - V[-1, 0]
-    V += offset
 
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
@@ -702,14 +812,14 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
         currentDepositY = currentDepositY[numPointsEachContour != 0, :]
         currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
 
-        # trim myo array to only include surface points whose normal vectors have fat deposits
-        myoPointsX = myoPointsX[numPointsEachContour != 0, :]
-        myoPointsY = myoPointsY[numPointsEachContour != 0, :]
-        myoPointsZ = myoPointsZ[numPointsEachContour != 0, :]
-
-        currentDepositX = np.concatenate((currentDepositX, myoPointsX), axis=1)
-        currentDepositY = np.concatenate((currentDepositY, myoPointsY), axis=1)
-        currentDepositZ = np.concatenate((currentDepositZ, myoPointsZ), axis=1)
+        # # trim myo array to only include surface points whose normal vectors have fat deposits
+        # myoPointsX = myoPointsX[numPointsEachContour != 0, :]
+        # myoPointsY = myoPointsY[numPointsEachContour != 0, :]
+        # myoPointsZ = myoPointsZ[numPointsEachContour != 0, :]
+        #
+        # currentDepositX = np.concatenate((currentDepositX, myoPointsX), axis=1)
+        # currentDepositY = np.concatenate((currentDepositY, myoPointsY), axis=1)
+        # currentDepositZ = np.concatenate((currentDepositZ, myoPointsZ), axis=1)
 
         numSlicesNonZero = 0
         for j in numPointsEachContour:
@@ -720,7 +830,7 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
         if numSlicesNonZero > 1:
             # generate spline surface for the current fat deposit
 
-            depositPointsEachContour = 2 * numPointsEachContour[numPointsEachContour > 0]
+            depositPointsEachContour = numPointsEachContour[numPointsEachContour > 0]
             depositSplineX, depositSplineY, depositSplineZ = fitSplineOpen3D(currentDepositX, currentDepositY,
                                                                              currentDepositZ, numSlicesNonZero,
                                                                              depositPointsEachContour)
