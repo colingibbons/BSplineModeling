@@ -1,28 +1,25 @@
 import numpy as np
 import matplotlib
-from skimage import morphology
-from skimage import segmentation
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
-import time
 
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
 
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
 
-startFrame = 2
-stopFrame = 7
+startFrame = 3
+stopFrame = 8
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -152,32 +149,32 @@ elevation = 15
 # plt.show()
 
 # ########################################################################################################################
-# # plot control points and the surface on the same plot
-# fig = plt.figure()
-# ax = fig.gca(projection='3d')
-# ax.set_title('Combined plot')
-# ax.view_init(elevation, azimuth)
-# ax.set_xlim(minX, maxX)
-# ax.set_ylim(minY, maxY)
-# ax.set_zlim(minZ, maxZ)
-#
-# # plot control points
-# ax.scatter(Vx, Vy, Vz, s=4)
-#
-# # add horizontal connections
-# for i in range(numControlPointsV):
-#     ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
-#
-# # add vertical connections
-# for i in range(numCalcControlPointsU):
-#     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
-#
-# # plot the surface
-# ax.plot_surface(X, Y, Z)
-#
+# plot control points and the surface on the same plot
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.set_title('Combined plot')
+ax.view_init(elevation, azimuth)
+ax.set_xlim(minX, maxX)
+ax.set_ylim(minY, maxY)
+ax.set_zlim(minZ, maxZ)
+
+# plot control points
+ax.scatter(Vx, Vy, Vz, s=4)
+
+# add horizontal connections
+for i in range(numControlPointsV):
+    ax.plot(Vx[i, 0:numCalcControlPointsU], Vy[i, 0:numCalcControlPointsU], Vz[i, 0:numCalcControlPointsU], 'r')
+
+# add vertical connections
+for i in range(numCalcControlPointsU):
+    ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
+
+# plot the surface
+ax.plot_surface(X, Y, Z)
+
 # read fat points from file and add them to the scene
 fatX, fatY, fatZ, numFatPointsPerSlice = splineTools.readSlicePoints(fatName, startFrame, stopFrame)
-# ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
+ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
 
 # generate normal vectors
 crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z, numPointsPerContour, numSlices)
@@ -190,8 +187,8 @@ thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y,
 fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
                                                                         Z, numSlices, numPointsPerContour)
 
-# ax.scatter(fatSurfaceX, fatSurfaceY, fatSurfaceZ, marker='s', s=4, c='black')
-# plt.show()
+ax.scatter(fatSurfaceX, fatSurfaceY, fatSurfaceZ, marker='s', s=4, c='black')
+plt.show()
 
 # generate an array that groups areas of nonzero fat thickness into separate fat deposits
 deposits, numDeposits = splineTools.getFatDeposits(thicknessByPoint, numSlices)
@@ -206,39 +203,39 @@ yStem = np.tile(y, numSlices)
 y = np.tile(y, (numSlices, 1))
 zStem = np.ravel(thicknessByPoint)
 
-# create "mountain" plot of fat thickness
-fig = plt.figure()
-ax = fig.add_subplot(2, 2, 2, projection='3d')
-ax.plot_surface(x, y, thicknessByPoint)
-ax.set_title('Mountain plot of fat thickness')
-ax.set_xlabel('Slice level')
-ax.set_ylabel('Azimuth')
-ax.set_zlabel('Fat thickness')
-
-# create stem plot on same axes
-ax = fig.add_subplot(2, 2, 4, projection='3d')
-for xx, yy, zz in zip(xStem, yStem, zStem):
-    plt.plot([xx, xx], [yy, yy], [0, zz], '-', color='black')
-ax.set_title('Stem plot of fat thickness')
-ax.set_xlabel('Slice level')
-ax.set_ylabel('Azimuth')
-ax.set_zlabel('Fat thickness')
-
-# plot the thickness array as a heatmap
-fig.add_subplot(2, 2, 1)
-plt.imshow(thicknessByPoint, cmap='hot')
-plt.title('Fat Thickness Map')
-plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
-plt.ylabel('Elevation ({})'.format(numSlices))
-plt.colorbar()
-
-# plot the segmentation output
-fig.add_subplot(2, 2, 3)
-plt.imshow(deposits, cmap='inferno')
-plt.title('Fat Deposit Segmentation')
-plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
-plt.ylabel('Elevation ({})'.format(numSlices))
-plt.show()
+# # create "mountain" plot of fat thickness
+# fig = plt.figure()
+# ax = fig.add_subplot(2, 2, 2, projection='3d')
+# ax.plot_surface(x, y, thicknessByPoint)
+# ax.set_title('Mountain plot of fat thickness')
+# ax.set_xlabel('Slice level')
+# ax.set_ylabel('Azimuth')
+# ax.set_zlabel('Fat thickness')
+#
+# # create stem plot on same axes
+# ax = fig.add_subplot(2, 2, 4, projection='3d')
+# for xx, yy, zz in zip(xStem, yStem, zStem):
+#     plt.plot([xx, xx], [yy, yy], [0, zz], '-', color='yellow')
+# ax.set_title('Stem plot of fat thickness')
+# ax.set_xlabel('Slice level')
+# ax.set_ylabel('Azimuth')
+# ax.set_zlabel('Fat thickness')
+#
+# # plot the thickness array as a heatmap
+# fig.add_subplot(2, 2, 1)
+# plt.imshow(thicknessByPoint, cmap='hot', aspect='4.0')
+# plt.title('Fat Thickness Map')
+# plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
+# plt.ylabel('Elevation ({})'.format(numSlices))
+# plt.colorbar()
+#
+# # plot the segmentation output
+# fig.add_subplot(2, 2, 3)
+# plt.imshow(deposits, cmap='inferno', aspect='4.0')
+# plt.title('Fat Deposit Segmentation')
+# plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
+# plt.ylabel('Elevation ({})'.format(numSlices))
+# plt.show()
 
 # create individual B-spline curves representing each of the fat deposits
 fatDepositsX, fatDepositsY, fatDepositsZ = splineTools.generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY,
@@ -293,56 +290,56 @@ for i in range(len(fatDepositsX)):
 plt.show()
 
 ########################################################################################################################
-# perform spline routine for right side
-# read in points from files
-origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame)
-
-# resample the data so each slice has the same number of points
-# do this by fitting each slice with B-spline curve
-resampleNumControlPoints = 7
-degree = 3
-resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-    splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-
-rightX, rightY, rightZ, rVx, rVy, rVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                                      numControlPointsV, degree, numPointsPerContour,
-                                                                      numSlices)
-
-# perform spline routine for left side
-# read in points from files
-origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame)
-
-# resample the data so each slice has the same number of points
-# do this by fitting each slice with B-spline curve
-resampleNumControlPoints = 7
-degree = 3
-resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-    splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-
-leftX, leftY, leftZ, lVx, lVy, lVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                                      numControlPointsV, degree, numPointsPerContour,
-                                                                      numSlices)
-# plot both sides of the surface along with the fat splines
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-ax.set_title('Heart spline model with fat deposits')
-ax.view_init(elevation, azimuth)
-ax.set_xlim(minX, maxX)
-ax.set_ylim(minY, maxY)
-ax.set_zlim(minZ, maxZ)
-
-# plot right side
-ax.plot_surface(rightX, rightY, rightZ, color='blue')
-
-# plot left side
-ax.plot_surface(leftX, leftY, leftZ, color='red')
-
-# # plot fat splines
-# for i in range(len(fatDepositsX)):
-#     ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
-
-# plot fat points
-ax.scatter(fatX, fatY, fatZ, s=4, color='yellow')
-
-# show all splines in the same plot
-plt.show()
+# # perform spline routine for right side
+# # read in points from files
+# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame)
+#
+# # resample the data so each slice has the same number of points
+# # do this by fitting each slice with B-spline curve
+# resampleNumControlPoints = 7
+# degree = 3
+# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+#     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+#
+# rightX, rightY, rightZ, rVx, rVy, rVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+#                                                                       numControlPointsV, degree, numPointsPerContour,
+#                                                                       numSlices)
+#
+# # perform spline routine for left side
+# # read in points from files
+# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame)
+#
+# # resample the data so each slice has the same number of points
+# # do this by fitting each slice with B-spline curve
+# resampleNumControlPoints = 7
+# degree = 3
+# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+#     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+#
+# leftX, leftY, leftZ, lVx, lVy, lVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+#                                                                       numControlPointsV, degree, numPointsPerContour,
+#                                                                       numSlices)
+# # plot both sides of the surface along with the fat splines
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
+# ax.set_title('Heart spline model with fat deposits')
+# ax.view_init(elevation, azimuth)
+# ax.set_xlim(minX, maxX)
+# ax.set_ylim(minY, maxY)
+# ax.set_zlim(minZ, maxZ)
+#
+# # plot right side
+# ax.plot_surface(rightX, rightY, rightZ, color='blue')
+#
+# # plot left side
+# ax.plot_surface(leftX, leftY, leftZ, color='red')
+#
+# # # plot fat splines
+# # for i in range(len(fatDepositsX)):
+# #     ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
+#
+# # plot fat points
+# ax.scatter(fatX, fatY, fatZ, s=4, color='yellow')
+#
+# # show all splines in the same plot
+# plt.show()

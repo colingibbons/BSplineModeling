@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from scipy.spatial.distance import euclidean
 from skimage import measure
 from skimage import segmentation
@@ -290,7 +291,7 @@ def fitSplineClosed2D(points, numControlPoints, degree):
     A_mat_con = temp_A_mat_con
 
     # solve matrix equations for control points
-    b_mat = np.linalg.lstsq(A_mat_con, orderedPoints)[0]
+    b_mat = np.linalg.lstsq(A_mat_con, orderedPoints, rcond=None)[0]
     b = np.transpose(b_mat)
 
     # duplicate last 'degree' control points
@@ -313,44 +314,27 @@ def fitSplineClosed2D(points, numControlPoints, degree):
 
 def fitSplineOpen2D(points, numControlPoints, degree):
 
+    # get number of points
     numDataPoints = len(points)
-
-    # set up parameters for spline fit
-    n = numControlPoints - 1
-    numCalcControlPoints = numControlPoints + degree
-
     # generate the knots (numKnots = n + 2d + 2)
-    numKnots = n + (2 * degree) + 2
+    numKnots = ((numControlPoints - 1) + degree + 1) + 1
     tau = np.zeros(numKnots)
     numOpenKnots = numKnots - (2*degree)
     tau[degree:-degree] = np.linspace(0, 1, numOpenKnots)
     tau[-degree:] = 1
 
     # set up parameterization
-    t = parameterizeClosedCurve(points, tau, degree)
+    t = parameterizeOpenCurve(points)
 
-    p_mat = np.transpose(points)
-    A_mat = np.zeros((numDataPoints, numCalcControlPoints))
+    A_mat = np.zeros((numDataPoints, numControlPoints))
 
     for j in range(numDataPoints):
-        for k in range(numCalcControlPoints):
-            A_mat[j][k] = NVal(tau, t[j], k - 1, degree, 0)
-
-    # create a constrained A matrix
-    A_mat_con = A_mat
-    A_mat_con[:, 0:degree] = A_mat_con[:, 0:degree] + A_mat_con[:, (numCalcControlPoints - degree):numCalcControlPoints]
-    temp_A_mat_con = A_mat_con[:, 0:numControlPoints]
-    A_mat_con = temp_A_mat_con
+        for k in range(numControlPoints):
+            A_mat[j, k] = NVal(tau, t[j], k - 1, degree, 0)
 
     # solve matrix equations for control points
-    b_mat = np.linalg.lstsq(A_mat_con, points)[0]
+    b_mat = np.linalg.lstsq(A_mat, points, rcond=None)[0]
     b = np.transpose(b_mat)
-
-    # duplicate last 'degree' control points
-    new_b = np.zeros((2, numCalcControlPoints))
-    new_b[:, 0:numControlPoints] = b
-    new_b[:, numControlPoints:numControlPoints + degree] = b[:, 0:degree]
-    b = new_b
 
     # calculate the spline
     interpCurve = BSVal(b, tau, t, 0)
@@ -432,19 +416,16 @@ def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints,
     newZ = np.zeros((numSlices, numPointsPerContour))
 
     # number of control points for a closed curve is increased by degree of curve
-    numCalcControlPoints = numControlPoints + degree
-    newXControl = np.zeros((numSlices, numCalcControlPoints))
-    newYControl = np.zeros((numSlices, numCalcControlPoints))
-    newZControl = np.zeros((numSlices, numCalcControlPoints))
+    newXControl = np.zeros((numSlices, numControlPoints))
+    newYControl = np.zeros((numSlices, numControlPoints))
+    newZControl = np.zeros((numSlices, numControlPoints))
 
     # now loop through the slices and fit each with a cubic B-spline curve
     totalError = 0
     for i in range(numSlices):
         # set up this array of points
         points = np.zeros((numPointsEachContour[i], 2))
-        # points[:, 0] = X[i, 0:numPointsEachContour[i]]
-        # points[:, 1] = Y[i, 0:numPointsEachContour[i]]
-
+        #
         points[:, 0] = X[i, X[i] != 0]
         points[:, 1] = Y[i, Y[i] != 0]
 
@@ -587,7 +568,7 @@ def getFatDeposits(thicknessByPoint, numSlices):
     deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
 
     # consider this as an alternative
-    #deposit_labels = segmentation.watershed(thicknessByPoint, 15, mask=thicknessBinary)
+    # deposit_labels = segmentation.watershed(thicknessByPoint, 15, mask=thicknessBinary)
 
     # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
     for i in range(numSlices):
@@ -699,14 +680,14 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     # do this by fitting each slice with B-spline curve
 
     # TODO define this to reflect the number of fat points in each slice of a given deposit
-    resampleNumControlPoints = 4
+    resampleNumControlPoints = 20
     degree = 3
     resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
         reSampleAndSmoothPointsOpen(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
 
     # set up parameters for spline fit
-    numControlPointsU = 6
-    numControlPointsV = 6
+    numControlPointsU = 20
+    numControlPointsV = 20
     degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
@@ -787,22 +768,10 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
         currentDepositY = np.copy(fatSurfaceY)
         currentDepositZ = np.copy(fatSurfaceZ)
 
-        # copy myocardium points for use in completing the b-spline surface
-        myoPointsX = np.copy(X)
-        myoPointsY = np.copy(Y)
-        myoPointsZ = np.copy(Z)
-
-        # remove last column of each array (last surface point is repeat of first)
-        myoPointsX = np.delete(myoPointsX, -1, 1)
-        myoPointsY = np.delete(myoPointsY, -1, 1)
-        myoPointsZ = np.delete(myoPointsZ, -1, 1)
 
         # remove points not corresponding with the current deposit from both sets of arrays
         currentDepositX[deposits != i] = 0
         currentDepositY[deposits != i] = 0
-
-        myoPointsX[deposits != i] = 0
-        myoPointsY[deposits != i] = 0
 
         # get number of nonzero points in each slice
         numPointsEachContour = (currentDepositX != 0).sum(1)
@@ -812,28 +781,49 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
         currentDepositY = currentDepositY[numPointsEachContour != 0, :]
         currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
 
-        # # trim myo array to only include surface points whose normal vectors have fat deposits
-        # myoPointsX = myoPointsX[numPointsEachContour != 0, :]
-        # myoPointsY = myoPointsY[numPointsEachContour != 0, :]
-        # myoPointsZ = myoPointsZ[numPointsEachContour != 0, :]
-        #
-        # currentDepositX = np.concatenate((currentDepositX, myoPointsX), axis=1)
-        # currentDepositY = np.concatenate((currentDepositY, myoPointsY), axis=1)
-        # currentDepositZ = np.concatenate((currentDepositZ, myoPointsZ), axis=1)
-
         numSlicesNonZero = 0
         for j in numPointsEachContour:
             if j > 0:
                 numSlicesNonZero += 1
 
+        firstMyoX = np.zeros((numSlicesNonZero, 1))
+        firstMyoY = np.zeros((numSlicesNonZero, 1))
+        lastMyoX = np.zeros((numSlicesNonZero, 1))
+        lastMyoY = np.zeros((numSlicesNonZero, 1))
+        for k in range(numSlicesNonZero):
+            xFirst = np.argwhere(currentDepositX[k] > 0)[0, 0]
+            yFirst = np.argwhere(currentDepositY[k] > 0)[0, 0]
+
+            firstMyoX[k] = X[k, xFirst]
+            firstMyoY[k] = Y[k, yFirst]
+
+            xLast = np.argwhere(currentDepositX[k] > 0)[-1, 0]
+            yLast = np.argwhere(currentDepositY[k] > 0)[-1, 0]
+
+            lastMyoX[k] = X[k, xLast]
+            lastMyoY[k] = Y[k, yLast]
+
+        currentDepositX = np.concatenate((firstMyoX, currentDepositX, lastMyoX), axis=1)
+        currentDepositY = np.concatenate((firstMyoY, currentDepositY, lastMyoY), axis=1)
+
+        depositPointsEachContour = numPointsEachContour[numPointsEachContour > 0] + 2
+
         # only generate a spline surface if multiple slices have points for that deposit. Otherwise won't work
         if numSlicesNonZero > 1:
             # generate spline surface for the current fat deposit
 
-            depositPointsEachContour = numPointsEachContour[numPointsEachContour > 0]
+
             depositSplineX, depositSplineY, depositSplineZ = fitSplineOpen3D(currentDepositX, currentDepositY,
                                                                              currentDepositZ, numSlicesNonZero,
                                                                              depositPointsEachContour)
+
+            # plot the fat spline in comparison to the myocardium surface for debugging purposes
+            fig = plt.figure()
+            ax = fig.gca(projection='3d')
+            ax.plot_surface(X, Y, Z)
+            ax.plot_surface(depositSplineX, depositSplineY, depositSplineZ)
+            plt.show()
+
             fatDepositsX.append(depositSplineX)
             fatDepositsY.append(depositSplineY)
             fatDepositsZ.append(depositSplineZ)
