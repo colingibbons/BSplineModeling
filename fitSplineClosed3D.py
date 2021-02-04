@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
@@ -18,8 +18,8 @@ fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/out
 # rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
 
-startFrame = 3
-stopFrame = 8
+startFrame = 2
+stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files

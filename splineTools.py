@@ -680,21 +680,19 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     # do this by fitting each slice with B-spline curve
 
     # TODO define this to reflect the number of fat points in each slice of a given deposit
-    resampleNumControlPoints = 20
+    resampleNumControlPoints = 4
     degree = 3
     resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
         reSampleAndSmoothPointsOpen(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
 
     # set up parameters for spline fit
-    numControlPointsU = 20
-    numControlPointsV = 20
+    numControlPointsU = 9
+    numControlPointsV = 6
     degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     numCalcControlPointsU = numControlPointsU + degree
     numCalcControlPointsV = numControlPointsV + degree
-    M = numPointsPerContour - 1
-    N = numSlices - 1
 
     # generate the knots (numKnots = n + 2d + 2)
     numKnotsU = m + (2*degree) + 2
@@ -715,19 +713,18 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
 
-    B = np.zeros((M + 1, numCalcControlPointsU))
-    for r in range(M + 1):
+    B = np.zeros((numPointsPerContour, numCalcControlPointsU))
+    for r in range(numPointsPerContour):
         for i in range(numCalcControlPointsU):
             uVal = U[0, r]
             B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
 
     # set up C matrix
-    C = np.zeros((N + 1, numCalcControlPointsV))
-    for s in range(N + 1):
+    C = np.zeros((numSlices, numCalcControlPointsV))
+    for s in range(numSlices):
         for j in range(numCalcControlPointsV):
             vVal = V[s, 0]
-            C[s, j] = NVal(tauV, vVal, j - 1, degree, 0)
-
+            C[s, j] = NVal(tauV, vVal, j-1, degree, 0)
 
     # now set up Px, Py, and Pz matrices
     Px = np.transpose(resampX)
@@ -818,11 +815,11 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
                                                                              depositPointsEachContour)
 
             # plot the fat spline in comparison to the myocardium surface for debugging purposes
-            fig = plt.figure()
-            ax = fig.gca(projection='3d')
-            ax.plot_surface(X, Y, Z)
-            ax.plot_surface(depositSplineX, depositSplineY, depositSplineZ)
-            plt.show()
+            # fig = plt.figure()
+            # ax = fig.gca(projection='3d')
+            # ax.plot_surface(X, Y, Z)
+            # ax.plot_surface(depositSplineX, depositSplineY, depositSplineZ)
+            # plt.show()
 
             fatDepositsX.append(depositSplineX)
             fatDepositsY.append(depositSplineY)
