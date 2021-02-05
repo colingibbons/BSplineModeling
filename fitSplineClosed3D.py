@@ -1,25 +1,29 @@
 import numpy as np
 import matplotlib
-
+from pyevtk.hl import gridToVTK
+from scipy.spatial import Delaunay
+from scipy.spatial import ConvexHull
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
+# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
 
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
 # rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
 
-startFrame = 2
-stopFrame = 7
+startFrame = 3
+stopFrame = 8
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -290,56 +294,68 @@ for i in range(len(fatDepositsX)):
 plt.show()
 
 ########################################################################################################################
-# # perform spline routine for right side
-# # read in points from files
-# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame)
-#
-# # resample the data so each slice has the same number of points
-# # do this by fitting each slice with B-spline curve
-# resampleNumControlPoints = 7
-# degree = 3
-# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-#     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-#
-# rightX, rightY, rightZ, rVx, rVy, rVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-#                                                                       numControlPointsV, degree, numPointsPerContour,
-#                                                                       numSlices)
-#
-# # perform spline routine for left side
-# # read in points from files
-# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame)
-#
-# # resample the data so each slice has the same number of points
-# # do this by fitting each slice with B-spline curve
-# resampleNumControlPoints = 7
-# degree = 3
-# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-#     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-#
-# leftX, leftY, leftZ, lVx, lVy, lVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-#                                                                       numControlPointsV, degree, numPointsPerContour,
-#                                                                       numSlices)
-# # plot both sides of the surface along with the fat splines
-# fig = plt.figure()
-# ax = fig.gca(projection='3d')
-# ax.set_title('Heart spline model with fat deposits')
-# ax.view_init(elevation, azimuth)
-# ax.set_xlim(minX, maxX)
-# ax.set_ylim(minY, maxY)
-# ax.set_zlim(minZ, maxZ)
-#
-# # plot right side
-# ax.plot_surface(rightX, rightY, rightZ, color='blue')
-#
-# # plot left side
-# ax.plot_surface(leftX, leftY, leftZ, color='red')
-#
-# # # plot fat splines
-# # for i in range(len(fatDepositsX)):
-# #     ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
-#
-# # plot fat points
-# ax.scatter(fatX, fatY, fatZ, s=4, color='yellow')
-#
-# # show all splines in the same plot
-# plt.show()
+# perform spline routine for right side
+# read in points from files
+origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame)
+
+# resample the data so each slice has the same number of points
+# do this by fitting each slice with B-spline curve
+resampleNumControlPoints = 7
+degree = 3
+resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+    splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+
+rightX, rightY, rightZ, rVx, rVy, rVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+                                                                      numControlPointsV, degree, numPointsPerContour,
+                                                                      numSlices)
+
+# perform spline routine for left side
+# read in points from files
+origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame)
+
+# resample the data so each slice has the same number of points
+# do this by fitting each slice with B-spline curve
+resampleNumControlPoints = 7
+degree = 3
+resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+    splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+
+leftX, leftY, leftZ, lVx, lVy, lVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+                                                                      numControlPointsV, degree, numPointsPerContour,
+                                                                      numSlices)
+# plot both sides of the surface along with the fat splines
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.set_title('Heart spline model with fat deposits')
+ax.view_init(elevation, azimuth)
+ax.set_xlim(minX, maxX)
+ax.set_ylim(minY, maxY)
+ax.set_zlim(minZ, maxZ)
+
+# plot right side
+ax.plot_surface(rightX, rightY, rightZ, color='blue')
+
+# plot left side
+ax.plot_surface(leftX, leftY, leftZ, color='red')
+
+# plot fat splines
+for i in range(len(fatDepositsX)):
+    ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
+
+# show all splines in the same plot
+plt.show()
+
+########################################################################################################################
+# stack 2D numpy slice data into a single, 3D array
+# x = np.ravel(rightX)
+# y = np.ravel(rightY)
+# z = np.ravel(rightZ)
+x = np.shape(rightX)[0]
+y = np.shape(rightX)[1]
+z = numSlices
+x = np.arange(0, x+1, dtype=np.int32)
+y = np.arange(0, y+1, dtype=np.int32)
+z = np.arange(0, z+1, dtype=np.int32)
+# gridToVTK('C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/rightSide', x, y, z,
+#           pointData={'rightSide': rightXYZ})
+

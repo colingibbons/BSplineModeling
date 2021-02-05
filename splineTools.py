@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.distance import euclidean
+from scipy.spatial import Delaunay
 from skimage import measure
 from skimage import segmentation
 import time
@@ -568,7 +569,7 @@ def getFatDeposits(thicknessByPoint, numSlices):
     deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
 
     # consider this as an alternative
-    # deposit_labels = segmentation.watershed(thicknessByPoint, 15, mask=thicknessBinary)
+    deposit_labels = segmentation.watershed(thicknessByPoint, 5, mask=thicknessBinary)
 
     # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
     for i in range(numSlices):
@@ -666,6 +667,8 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     Vy = newVy
     Vz = newVz
 
+    tri = Delaunay(U, V)
+
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
     X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
@@ -686,8 +689,8 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
         reSampleAndSmoothPointsOpen(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
 
     # set up parameters for spline fit
-    numControlPointsU = 9
-    numControlPointsV = 6
+    numControlPointsU = 4
+    numControlPointsV = 4
     degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
