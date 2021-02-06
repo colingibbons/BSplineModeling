@@ -1,7 +1,10 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.spatial.distance import euclidean
-from scipy.spatial import Delaunay
+from matplotlib.tri import triangulation as mtra
+
+from pyevtk.hl import unstructuredGridToVTK
+from pyevtk.vtk import VtkTriangle
+
 from skimage import measure
 from skimage import segmentation
 import time
@@ -250,7 +253,7 @@ def readSlicePoints(baseName, startFrame, stopFrame):
         sliceFile.close()
         # for now, just evenly space the slices along the z-axis. Can figure out the conversion from the 1cm
         # gap between slices in reality and the coordinate space in which the splines are visualized later
-        Z[i, 0:numPointsPerContour[i]] = (startFrame + i) * 5
+        Z[i, 0:numPointsPerContour[i]] = (startFrame + i) * 10
 
     return X, Y, Z, numPointsPerContour
 
@@ -667,7 +670,8 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     Vy = newVy
     Vz = newVz
 
-    tri = Delaunay(U, V)
+    # generate triangles for use in VTK models
+    tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
 
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
@@ -675,7 +679,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     stopTime = time.perf_counter()
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
-    return X, Y, Z, Vx, Vy, Vz
+    return X, Y, Z, Vx, Vy, Vz, tri
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
 def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
@@ -748,13 +752,15 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
     Vz = np.matmul(pinvB, Pz)
     Vz = np.transpose(np.matmul(Vz, pinvC))
 
+    tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
+
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
     X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
     stopTime = time.perf_counter()
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
-    return X, Y, Z
+    return X, Y, Z, tri
 
 def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, deposits, numDeposits):
     # loop through each deposit and generate a spline surface for that deposit if it is sufficiently large
@@ -762,6 +768,7 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
     fatDepositsX = []
     fatDepositsY = []
     fatDepositsZ = []
+    fatDepositTriangles = []
     for i in range(1, numDeposits + 1):
         # copy fat surface points into array
         currentDepositX = np.copy(fatSurfaceX)
@@ -813,9 +820,9 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
             # generate spline surface for the current fat deposit
 
 
-            depositSplineX, depositSplineY, depositSplineZ = fitSplineOpen3D(currentDepositX, currentDepositY,
-                                                                             currentDepositZ, numSlicesNonZero,
-                                                                             depositPointsEachContour)
+            depositSplineX, depositSplineY, depositSplineZ, tri = fitSplineOpen3D(currentDepositX, currentDepositY,
+                                                                                  currentDepositZ, numSlicesNonZero,
+                                                                                  depositPointsEachContour)
 
             # plot the fat spline in comparison to the myocardium surface for debugging purposes
             # fig = plt.figure()
@@ -827,6 +834,32 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
             fatDepositsX.append(depositSplineX)
             fatDepositsY.append(depositSplineY)
             fatDepositsZ.append(depositSplineZ)
+            fatDepositTriangles.append(tri)
 
-    return fatDepositsX, fatDepositsY, fatDepositsZ
+    return fatDepositsX, fatDepositsY, fatDepositsZ, fatDepositTriangles
+
+# creates a VTK file containing the data for a given element of the B-spline curve
+def createVTKModel(X, Y, Z, triangles, filePath):
+
+    # ravel the arrays in preparation for writing VTK file
+    X = np.ravel(X)
+    Y = np.ravel(Y)
+    Z = np.ravel(Z)
+
+    # get number of points - points will act as vertices for the triangular cells
+    numVerts = triangles.triangles.shape[0] + 1
+
+    # all cells will be triangles
+    ctype = np.zeros(numVerts)
+    ctype.fill(VtkTriangle.tid)
+
+    # generate offsets for the indices of the vertices that comprise each cell
+    offset = np.arange(0, 3 * numVerts, 3)
+
+    # create array that indicates how the vertices should be connected
+    conn = np.ravel(triangles.triangles)
+
+    # write to VTK file
+    unstructuredGridToVTK(filePath, X, Y, Z, connectivity=conn, offsets=offset, cell_types=ctype)
+
 

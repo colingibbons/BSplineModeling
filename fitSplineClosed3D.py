@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib
-from pyevtk.hl import gridToVTK
-from scipy.spatial import Delaunay
-from scipy.spatial import ConvexHull
+from os.path import isdir
+from os import mkdir
+
+
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
@@ -12,15 +13,17 @@ import splineTools
 # fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
 
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
 
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
 
 startFrame = 3
 stopFrame = 8
@@ -79,8 +82,8 @@ degree = 3
 numCalcControlPointsU = numControlPointsU + degree
 
 # call function to perform outside point spline fitting
-X, Y, Z, Vx, Vy, Vz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV,
-                                                    degree, numPointsPerContour, numSlices)
+X, Y, Z, Vx, Vy, Vz, tri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+                                                         numControlPointsV, degree, numPointsPerContour, numSlices)
 
 # calculate the error of the fit between surface and resampled data
 errorInFitMatrix = (X - resampX)**2 + (Y-resampY)**2 + (Z-resampZ)**2
@@ -242,8 +245,12 @@ zStem = np.ravel(thicknessByPoint)
 # plt.show()
 
 # create individual B-spline curves representing each of the fat deposits
-fatDepositsX, fatDepositsY, fatDepositsZ = splineTools.generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY,
-                                                                                 fatSurfaceZ, deposits, numDeposits)
+fatDepositsX, fatDepositsY, fatDepositsZ, fatDepositTriangles = splineTools.generateFatDepositSplines(X, Y, Z,
+                                                                                                      fatSurfaceX,
+                                                                                                      fatSurfaceY,
+                                                                                                      fatSurfaceZ,
+                                                                                                      deposits,
+                                                                                                      numDeposits)
 
 # # plot each normal vector one at a time along with the fat points associated with it
 # for i in range(numSlices):
@@ -274,24 +281,24 @@ fatDepositsX, fatDepositsY, fatDepositsZ = splineTools.generateFatDepositSplines
 
 ########################################################################################################################
 
-# plot control points and the surface on the same plot
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-ax.set_title('Heart surface with fat deposits')
-ax.view_init(elevation, azimuth)
-ax.set_xlim(minX, maxX)
-ax.set_ylim(minY, maxY)
-ax.set_zlim(minZ, maxZ)
-
-# plot the myocardium surface
-ax.plot_surface(X, Y, Z)
-
-# plot the fat surfaces
-for i in range(len(fatDepositsX)):
-    ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
-
-# show plot with fat surfaces
-plt.show()
+# # plot control points and the surface on the same plot
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
+# ax.set_title('Heart surface with fat deposits')
+# ax.view_init(elevation, azimuth)
+# ax.set_xlim(minX, maxX)
+# ax.set_ylim(minY, maxY)
+# ax.set_zlim(minZ, maxZ)
+#
+# # plot the myocardium surface
+# ax.plot_surface(X, Y, Z)
+#
+# # plot the fat surfaces
+# for i in range(len(fatDepositsX)):
+#     ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
+#
+# # show plot with fat surfaces
+# plt.show()
 
 ########################################################################################################################
 # perform spline routine for right side
@@ -305,9 +312,9 @@ degree = 3
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 
-rightX, rightY, rightZ, rVx, rVy, rVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                                      numControlPointsV, degree, numPointsPerContour,
-                                                                      numSlices)
+rightX, rightY, rightZ, rVx, rVy, rVz, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
+                                                                            numControlPointsU, numControlPointsV,
+                                                                            degree, numPointsPerContour, numSlices)
 
 # perform spline routine for left side
 # read in points from files
@@ -320,9 +327,9 @@ degree = 3
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 
-leftX, leftY, leftZ, lVx, lVy, lVz = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                                      numControlPointsV, degree, numPointsPerContour,
-                                                                      numSlices)
+leftX, leftY, leftZ, lVx, lVy, lVz, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+                                                                         numControlPointsV, degree, numPointsPerContour,
+                                                                         numSlices)
 # plot both sides of the surface along with the fat splines
 fig = plt.figure()
 ax = fig.gca(projection='3d')
@@ -346,16 +353,21 @@ for i in range(len(fatDepositsX)):
 plt.show()
 
 ########################################################################################################################
-# stack 2D numpy slice data into a single, 3D array
-# x = np.ravel(rightX)
-# y = np.ravel(rightY)
-# z = np.ravel(rightZ)
-x = np.shape(rightX)[0]
-y = np.shape(rightX)[1]
-z = numSlices
-x = np.arange(0, x+1, dtype=np.int32)
-y = np.arange(0, y+1, dtype=np.int32)
-z = np.arange(0, z+1, dtype=np.int32)
-# gridToVTK('C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/rightSide', x, y, z,
-#           pointData={'rightSide': rightXYZ})
+# check for vtk model folder, and create it if it does not already exist
+if not isdir(vtkPath):
+    mkdir(vtkPath)
+
+# generate vtk model for right myo
+rightPath = vtkPath + 'rightSide'
+splineTools.createVTKModel(rightX, rightY, rightZ, rTri, rightPath)
+
+# generate vtk model for left myo
+leftPath = vtkPath + 'leftSide'
+splineTools.createVTKModel(leftX, leftY, leftZ, lTri, leftPath)
+
+numFatDeposits = len(fatDepositsX)
+
+for i in range(numFatDeposits):
+    depositPath = vtkPath + 'fatDeposit_' + str(i + 1)
+    splineTools.createVTKModel(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], fatDepositTriangles[i], depositPath)
 
