@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
 from matplotlib.tri import triangulation as mtra
+import matplotlib.pyplot as plt
 
 from pyevtk.hl import unstructuredGridToVTK
 from pyevtk.vtk import VtkTriangle
@@ -188,6 +189,18 @@ def parameterizeTube(X, Y, Z, tauU, tauV, degree):
 
     return U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV
 
+def parameterizeFat(X, Y, Z, tauU, tauV, degree):
+
+    numSlices, numPointsPerContour = np.shape(X)
+    numSamples = len(tauU)
+
+    vVect = np.linspace(0, 1, numSamples)
+    uVect = np.linspace(0, 1, numPointsPerContour)
+
+    U, V = np.meshgrid(uVect, vVect)
+
+    return U, V
+
 
 def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V):
 
@@ -227,7 +240,7 @@ def readSlicePoints(baseName, startFrame, stopFrame):
 
     for i in range(numSlices):
         filePath = baseName + str(startFrame + i) + '.txt'
-
+        # TODO fix issue where an empty file will crash the program. e.g. if there is no right side points on a slice
         with open(filePath) as f:
             for j, k in enumerate(f):
                 pass
@@ -510,7 +523,12 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     # positive. Using -1 prevents filler points and actual data from being mistaken for one another
     xFatPoints.fill(-1)
     yFatPoints.fill(-1)
+
     for i in range(-1, numSlices - 1):
+
+        plt.figure()
+        plt.scatter(fatX[i], fatY[i], color='yellow')
+        plt.show()
         for j in range(numPointsPerContour - 1):
             # generate a point arbitrarily far along the normal vector
             xDir = X[i, j] + (200 * crossX[i, j])
@@ -539,7 +557,10 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 
     fatSurfaceX = np.zeros((numSlices, numPointsPerContour - 1))
     fatSurfaceY = np.zeros((numSlices, numPointsPerContour - 1))
-    fatSurfaceZ = Z[:, :numPointsPerContour - 1]
+    minZ = np.min(Z)
+    maxZ = np.max(Z)
+    z = np.linspace(minZ, maxZ, numSlices)
+    fatSurfaceZ = np.transpose(np.tile(z, (numPointsPerContour - 1, 1)))
     for i in range(numSlices):
         for j in range(numPointsPerContour - 1):
             surfacePoint = (X[i, j], Y[i, j])
@@ -585,7 +606,7 @@ def getFatDeposits(thicknessByPoint, numSlices):
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
 def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV, degree, numPointsPerContour,
-                      numSlices):
+                      numSlices, upsample=False):
     numCalcControlPointsU = numControlPointsU + degree
     m = numControlPointsU - 1
     n = numControlPointsV - 1
@@ -670,6 +691,14 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     Vy = newVy
     Vz = newVz
 
+    # generate a larger parameterization array before evaluating the tensor product
+    if upsample:
+        uMin = np.min(U)
+        uMax = np.max(U)
+        uVect = np.linspace(uMin, uMax, 100)
+        vVect = np.linspace(0, 1, 100)
+        U, V = np.meshgrid(uVect, vVect)
+
     # generate triangles for use in VTK models
     tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
 
@@ -682,7 +711,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     return X, Y, Z, Vx, Vy, Vz, tri
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
-def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
+def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour, upsample=False):
     # resample the data so each slice has the same number of points
     # do this by fitting each slice with B-spline curve
 
@@ -694,7 +723,7 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
 
     # set up parameters for spline fit
     numControlPointsU = 4
-    numControlPointsV = 4
+    numControlPointsV = numSlices - 2
     degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
@@ -716,6 +745,8 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
 
     # set up parameterization
     U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ, tauU, tauV, degree)
+
+    # U, V = parameterizeFat(resampX, resampY, resampZ, tauU, tauV, degree)
 
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
@@ -751,6 +782,14 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour):
 
     Vz = np.matmul(pinvB, Pz)
     Vz = np.transpose(np.matmul(Vz, pinvC))
+
+    # generate larger parameterization array if upsampling option is selected
+    if upsample:
+        uMin = np.min(U)
+        uMax = np.max(U)
+        uVect = np.linspace(uMin, uMax, 100)
+        vVect = np.linspace(0, 1, 100)
+        U, V = np.meshgrid(uVect, vVect)
 
     tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
 
@@ -817,19 +856,12 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
 
         # only generate a spline surface if multiple slices have points for that deposit. Otherwise won't work
         if numSlicesNonZero > 1:
+
             # generate spline surface for the current fat deposit
-
-
             depositSplineX, depositSplineY, depositSplineZ, tri = fitSplineOpen3D(currentDepositX, currentDepositY,
                                                                                   currentDepositZ, numSlicesNonZero,
-                                                                                  depositPointsEachContour)
-
-            # plot the fat spline in comparison to the myocardium surface for debugging purposes
-            # fig = plt.figure()
-            # ax = fig.gca(projection='3d')
-            # ax.plot_surface(X, Y, Z)
-            # ax.plot_surface(depositSplineX, depositSplineY, depositSplineZ)
-            # plt.show()
+                                                                                  depositPointsEachContour,
+                                                                                  upsample=False)
 
             fatDepositsX.append(depositSplineX)
             fatDepositsY.append(depositSplineY)
@@ -861,5 +893,3 @@ def createVTKModel(X, Y, Z, triangles, filePath):
 
     # write to VTK file
     unstructuredGridToVTK(filePath, X, Y, Z, connectivity=conn, offsets=offset, cell_types=ctype)
-
-

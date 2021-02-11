@@ -3,15 +3,17 @@ import matplotlib
 from os.path import isdir
 from os import mkdir
 
-
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
@@ -19,11 +21,11 @@ import splineTools
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
 
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
 
 startFrame = 3
 stopFrame = 8
@@ -86,11 +88,11 @@ X, Y, Z, Vx, Vy, Vz, tri = splineTools.fitSplineClosed3D(resampX, resampY, resam
                                                          numControlPointsV, degree, numPointsPerContour, numSlices)
 
 # calculate the error of the fit between surface and resampled data
-errorInFitMatrix = (X - resampX)**2 + (Y-resampY)**2 + (Z-resampZ)**2
-errorInSurfaceFit = np.sum(errorInFitMatrix)
-totalResampleError = errorInSurfaceFit
-maxErrorInSurfaceFit = np.max(errorInFitMatrix)
-avgErrorInSurfaceFit = errorInSurfaceFit / (numSlices * numPointsPerContour)
+# errorInFitMatrix = (X - resampX)**2 + (Y-resampY)**2 + (Z-resampZ)**2
+# errorInSurfaceFit = np.sum(errorInFitMatrix)
+# totalResampleError = errorInSurfaceFit
+# maxErrorInSurfaceFit = np.max(errorInFitMatrix)
+# avgErrorInSurfaceFit = errorInSurfaceFit / (numSlices * numPointsPerContour)
 
 ########################################################################################################################
 # plot all data on same scale
@@ -314,7 +316,8 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 
 rightX, rightY, rightZ, rVx, rVy, rVz, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
                                                                             numControlPointsU, numControlPointsV,
-                                                                            degree, numPointsPerContour, numSlices)
+                                                                            degree, numPointsPerContour, numSlices,
+                                                                            upsample=True)
 
 # perform spline routine for left side
 # read in points from files
@@ -329,7 +332,7 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 
 leftX, leftY, leftZ, lVx, lVy, lVz, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
                                                                          numControlPointsV, degree, numPointsPerContour,
-                                                                         numSlices)
+                                                                         numSlices, upsample = True)
 # plot both sides of the surface along with the fat splines
 fig = plt.figure()
 ax = fig.gca(projection='3d')
