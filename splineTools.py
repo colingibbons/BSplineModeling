@@ -473,7 +473,9 @@ def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints,
 
 # this function generates "normal vectors" that hard-codes the Z component of each normal vector as 0, such that
 # the fat thickness in each (2D) slice can be assessed
-def generateNormalVectors(X, Y, Z, numPointsPerContour, numSlices):
+def generateNormalVectors(X, Y, Z):
+
+    numSlices, numPointsPerContour = X.shape
 
     crossX = np.zeros((numSlices, numPointsPerContour - 1))
     crossY = np.zeros((numSlices, numPointsPerContour - 1))
@@ -524,21 +526,22 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     xFatPoints.fill(-1)
     yFatPoints.fill(-1)
 
+    # generate X and Y indices at which fat measurements should take place. This looks a little different for this
+    # function because the slice loop begins at -1 to accommodate
+    scaleFactor = X.shape[0] / numSlices
+    indices = np.floor(np.arange(0, X.shape[0], scaleFactor)).astype(int)
     for i in range(-1, numSlices - 1):
-
-        plt.figure()
-        plt.scatter(fatX[i], fatY[i], color='yellow')
-        plt.show()
+        index = indices[i]
         for j in range(numPointsPerContour - 1):
             # generate a point arbitrarily far along the normal vector
-            xDir = X[i, j] + (200 * crossX[i, j])
-            yDir = Y[i, j] + (200 * crossY[i, j])
+            xDir = X[index, j] + (200 * crossX[index, j])
+            yDir = Y[index, j] + (200 * crossY[index, j])
             thickness = 0
             # check each fat point for proximity to the line defined by normal vector
             for k in range(fatPointsPerSlice[i]):
-                ab = np.sqrt((xDir - X[i, j])**2 + (yDir - Y[i, j])**2)
+                ab = np.sqrt((xDir - X[index, j])**2 + (yDir - Y[index, j])**2)
                 ac = np.sqrt((xDir-fatX[i, k])**2 + (yDir - fatY[i, k])**2)
-                bc = np.sqrt((X[i, j] - fatX[i, k])**2 + (Y[i, j] - fatY[i, k])**2)
+                bc = np.sqrt((X[index, j] - fatX[i, k])**2 + (Y[index, j] - fatY[i, k])**2)
 
                 is_on_segment = abs(ac + bc - ab) < 0.02
 
@@ -559,14 +562,20 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
     fatSurfaceY = np.zeros((numSlices, numPointsPerContour - 1))
     minZ = np.min(Z)
     maxZ = np.max(Z)
+
+    # if upsampling was used, account for the fact that an offset must be applied to grab points in X/Y arrays that
+    # actually correspond with the slices where fat points are present
+    scaleFactor = X.shape[0] / numSlices
+
     z = np.linspace(minZ, maxZ, numSlices)
     fatSurfaceZ = np.transpose(np.tile(z, (numPointsPerContour - 1, 1)))
     for i in range(numSlices):
         for j in range(numPointsPerContour - 1):
-            surfacePoint = (X[i, j], Y[i, j])
+            index = np.floor(i*scaleFactor).astype(int)
+            surfacePoint = (X[index, j], Y[index, j])
             if thicknessByPoint[i, j] == 0:
-                fatSurfaceX[i, j] = X[i, j]
-                fatSurfaceY[i, j] = Y[i, j]
+                fatSurfaceX[i, j] = X[index, j]
+                fatSurfaceY[i, j] = Y[index, j]
             else:
                 dist = 0
                 for x, y in zip(xFatPoints[i, j, :], yFatPoints[i, j, :]):
@@ -581,6 +590,10 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 
     return fatSurfaceX, fatSurfaceY, fatSurfaceZ
 
+# TODO make this function generate fat surface points based on the thickness spline "mountain" plot
+def altFatSurfacePoints():
+    pass
+
 # generate a list of fat deposits to create a collection of fat splines that reflect the non-continuous nature
 # of fat surrounding the myocardium
 def getFatDeposits(thicknessByPoint, numSlices):
@@ -590,10 +603,11 @@ def getFatDeposits(thicknessByPoint, numSlices):
 
     # isolate fat deposits and "label" them with different numeric values to differentiate them
     fatDeposits = thicknessBinary > thicknessBinary.mean()
-    deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
+    # deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
 
     # consider this as an alternative
     deposit_labels = segmentation.watershed(thicknessByPoint, 5, mask=thicknessBinary)
+    numDeposits = len(np.unique(deposit_labels)) - 1
 
     # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
     for i in range(numSlices):
@@ -827,10 +841,7 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
         currentDepositY = currentDepositY[numPointsEachContour != 0, :]
         currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
 
-        numSlicesNonZero = 0
-        for j in numPointsEachContour:
-            if j > 0:
-                numSlicesNonZero += 1
+        numSlicesNonZero = np.count_nonzero(numPointsEachContour)
 
         firstMyoX = np.zeros((numSlicesNonZero, 1))
         firstMyoY = np.zeros((numSlicesNonZero, 1))
@@ -893,3 +904,92 @@ def createVTKModel(X, Y, Z, triangles, filePath):
 
     # write to VTK file
     unstructuredGridToVTK(filePath, X, Y, Z, connectivity=conn, offsets=offset, cell_types=ctype)
+
+def mountainPlot(x, y, thickness, numSlices, numPointsPerContour, upsample=False):
+
+    # reduce number of points by 1 to account for removal of duplicate point from fat map (since first and last point
+    # of the closed surface are the same)
+    numPointsPerContour -= 1
+
+    # set up parameters for spline fit
+    numControlPointsU = 4
+    numControlPointsV = 4
+    degree = 3
+    m = numControlPointsU - 1
+    n = numControlPointsV - 1
+    numCalcControlPointsU = numControlPointsU + degree
+    numCalcControlPointsV = numControlPointsV + degree
+
+    # generate the knots (numKnots = n + 2d + 2)
+    numKnotsU = m + (2*degree) + 2
+    tauU = np.zeros(numKnotsU)
+    numOpenKnotsU = numKnotsU - (2*degree)
+    tauU[degree:-degree] = np.linspace(0, 1, numOpenKnotsU)
+    tauU[-degree:] = 1
+
+    numKnotsV = n + 2 * degree + 2
+    tauV = np.zeros(numKnotsV)
+    numOpenKnotsV = numKnotsV - (2*degree)
+    tauV[degree:-degree] = np.linspace(0, 1, numOpenKnotsV)
+    tauV[-degree:] = 1
+
+    # set up parameterization
+    uVect = np.linspace(0, 1, numPointsPerContour)
+    vVect = np.linspace(0, 1, numSlices)
+    U, V = np.meshgrid(uVect, vVect)
+
+    # U, V = parameterizeFat(resampX, resampY, resampZ, tauU, tauV, degree)
+
+    # now we need to set up matrices to solve for mesh of control points
+    # (B*V*T^T = P)
+
+    B = np.zeros((numPointsPerContour, numCalcControlPointsU))
+    for r in range(numPointsPerContour):
+        for i in range(numCalcControlPointsU):
+            uVal = U[0, r]
+            B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
+
+    # set up C matrix
+    C = np.zeros((numSlices, numCalcControlPointsV))
+    for s in range(numSlices):
+        for j in range(numCalcControlPointsV):
+            vVal = V[s, 0]
+            C[s, j] = NVal(tauV, vVal, j-1, degree, 0)
+
+    # now set up Px, Py, and Pz matrices
+    Px = np.transpose(x)
+    Py = np.transpose(y)
+    Pz = np.transpose(thickness)
+
+    # calculate pseudo-inverses of B and C for use in generating control points
+    pinvB = np.linalg.pinv(B)
+    pinvC = np.linalg.pinv(np.transpose(C))
+
+    # solve for control points
+    Vx = np.matmul(pinvB, Px)
+    Vx = np.transpose(np.matmul(Vx, pinvC))
+
+    Vy = np.matmul(pinvB, Py)
+    Vy = np.transpose(np.matmul(Vy, pinvC))
+
+    Vz = np.matmul(pinvB, Pz)
+    Vz = np.transpose(np.matmul(Vz, pinvC))
+
+    # generate larger parameterization array if upsampling option is selected
+    if upsample:
+        uMin = np.min(U)
+        uMax = np.max(U)
+        uVect = np.linspace(uMin, uMax, 100)
+        vVect = np.linspace(0, 1, 100)
+        U, V = np.meshgrid(uVect, vVect)
+
+    tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
+
+    # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
+    startTime = time.perf_counter()
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
+    stopTime = time.perf_counter()
+    print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
+
+    return X, Y, Z, tri
+
