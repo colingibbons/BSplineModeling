@@ -477,9 +477,9 @@ def generateNormalVectors(X, Y, Z):
 
     numSlices, numPointsPerContour = X.shape
 
-    crossX = np.zeros((numSlices, numPointsPerContour - 1))
-    crossY = np.zeros((numSlices, numPointsPerContour - 1))
-    crossZ = np.zeros((numSlices, numPointsPerContour - 1))
+    crossX = np.zeros((numSlices, numPointsPerContour))
+    crossY = np.zeros((numSlices, numPointsPerContour))
+    crossZ = np.zeros((numSlices, numPointsPerContour))
 
     # loop through all points and compute normals. First and last points on each contour are the same, so the (redundant)
     # normal is not computed for the last point
@@ -518,7 +518,7 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     # represents a voxel, the vector passing through the corner of a voxel vs directly through will contribute unevenly
     # to the overall thickness. Maybe do first check and then use magnitude of distance to scale the contribution to the
     # overall thickness by that pixel
-    thicknessByPoint = np.zeros((numSlices, numPointsPerContour - 1))
+    thicknessByPoint = np.zeros((numSlices, numPointsPerContour))
     xFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
     yFatPoints = np.zeros((numSlices, numPointsPerContour, max(fatPointsPerSlice)))
     # fill point array with -1. Because of the way tissue data is extracted from PATS, all actual values will be
@@ -532,7 +532,7 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     indices = np.floor(np.arange(0, X.shape[0], scaleFactor)).astype(int)
     for i in range(-1, numSlices - 1):
         index = indices[i]
-        for j in range(numPointsPerContour - 1):
+        for j in range(numPointsPerContour):
             # generate a point arbitrarily far along the normal vector
             xDir = X[index, j] + (200 * crossX[index, j])
             yDir = Y[index, j] + (200 * crossY[index, j])
@@ -558,8 +558,8 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
 # get the set of points that will be used to generate a single fat spline surface
 def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
 
-    fatSurfaceX = np.zeros((numSlices, numPointsPerContour - 1))
-    fatSurfaceY = np.zeros((numSlices, numPointsPerContour - 1))
+    fatSurfaceX = np.zeros((numSlices, numPointsPerContour))
+    fatSurfaceY = np.zeros((numSlices, numPointsPerContour))
     minZ = np.min(Z)
     maxZ = np.max(Z)
 
@@ -568,9 +568,9 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
     scaleFactor = X.shape[0] / numSlices
 
     z = np.linspace(minZ, maxZ, numSlices)
-    fatSurfaceZ = np.transpose(np.tile(z, (numPointsPerContour - 1, 1)))
+    fatSurfaceZ = np.transpose(np.tile(z, (numPointsPerContour, 1)))
     for i in range(numSlices):
-        for j in range(numPointsPerContour - 1):
+        for j in range(numPointsPerContour):
             index = np.floor(i*scaleFactor).astype(int)
             surfacePoint = (X[index, j], Y[index, j])
             if thicknessByPoint[i, j] == 0:
@@ -590,24 +590,32 @@ def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSl
 
     return fatSurfaceX, fatSurfaceY, fatSurfaceZ
 
-# TODO make this function generate fat surface points based on the thickness spline "mountain" plot
-def altFatSurfacePoints():
-    pass
+def reshape_array(array, newshape):
+    # changes the shape of a numpy array to match the scaling of the preprocessed .seg.nrrd array
+    assert len(array.shape) == len(newshape)
+
+    slices = [slice(0, old, float(old) / new) for old, new in zip(array.shape, newshape)]
+    coordinates = np.mgrid[slices]
+    indices = coordinates.astype('i')
+
+    return array[tuple(indices)]
 
 # generate a list of fat deposits to create a collection of fat splines that reflect the non-continuous nature
 # of fat surrounding the myocardium
-def getFatDeposits(thicknessByPoint, numSlices):
+def getFatDeposits(X, thicknessByPoint, numSlices):
     # create binarized version of thickness array for segmentation purposes
     thicknessBinary = np.copy(thicknessByPoint)
     thicknessBinary[thicknessBinary > 0] = 255
 
     # isolate fat deposits and "label" them with different numeric values to differentiate them
     fatDeposits = thicknessBinary > thicknessBinary.mean()
-    # deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
+    deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
+
+    deposits = reshape_array(deposit_labels, (X.shape[0], X.shape[1]))
 
     # consider this as an alternative
-    deposit_labels = segmentation.watershed(thicknessByPoint, 5, mask=thicknessBinary)
-    numDeposits = len(np.unique(deposit_labels)) - 1
+    # deposit_labels = segmentation.watershed(thicknessByPoint, 5, mask=thicknessBinary)
+    # numDeposits = len(np.unique(deposit_labels)) - 1
 
     # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
     for i in range(numSlices):
@@ -615,7 +623,78 @@ def getFatDeposits(thicknessByPoint, numSlices):
             obj = deposit_labels[i, -1]
             deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
 
-    return deposit_labels, numDeposits
+    return deposits, numDeposits
+
+def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, threshold):
+
+    # determine size of iterables
+    numU, numV = X.shape
+
+    depositsX = []
+    depositsY = []
+    depositsZ = []
+    depositTris = []
+
+    # loop through each segmented fat deposit, excluding label 0 (where fat thickness = 0)
+    labels = np.unique(deposits)
+
+    # expand the deposits by a small distance and create a mask such that
+    # they can be made to "hug" the surface
+    expandedDep = segmentation.expand_labels(deposits, 1)
+    expandedMask = deposits ^ expandedDep
+
+    for k in labels[1:]:
+
+        uParam = U[(deposits == k) & (fatThicknessZ > threshold)]
+        vParam = V[(deposits == k) & (fatThicknessZ > threshold)]
+
+        # uParam = U[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask == k)]
+        # vParam = V[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask == k)]
+
+        fLength = len(uParam)
+        fatPointsX = np.zeros(fLength)
+        fatPointsY = np.zeros(fLength)
+        fatPointsZ = np.zeros(fLength)
+
+        # attempt triangulation first. if a failure occurs, move on to the next deposit
+        try:
+            # create fat point triangulation based on parameter values
+            fatTri = mtra.Triangulation(uParam, vParam)
+
+            # check to make sure length is at least 3 - otherwise triangulation will fail
+            index = 0
+            for i in range(numU):
+                for j in range(numV):
+                    if (deposits[i, j] == k) and (fatThicknessZ[i, j] > threshold):
+                        # calculate point location along normal vector based on fat thickness at that point
+                        thisX = X[i, j] + (fatThicknessZ[i, j] * crossX[i, j])
+                        thisY = Y[i, j] + (fatThicknessZ[i, j] * crossY[i, j])
+                        thisZ = Z[i, j]
+
+                        fatPointsX[index] = thisX
+                        fatPointsY[index] = thisY
+                        fatPointsZ[index] = thisZ
+
+                        index += 1
+                    # make surface point a part of the fat surface
+                    # elif expandedMask[i, j] == k:
+                    #     fatPointsX[index] = X[i, j]
+                    #     fatPointsY[index] = Y[i, j]
+                    #     fatPointsZ[index] = Z[i, j]
+                    #
+                    #     index += 1
+
+            # add fat points and triangles to deposit lists
+            depositsX.append(fatPointsX)
+            depositsY.append(fatPointsY)
+            depositsZ.append(fatPointsZ)
+            depositTris.append(fatTri)
+        except RuntimeError:
+            pass
+        except ValueError:
+            pass
+
+    return depositsX, depositsY, depositsZ, depositTris
 
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
@@ -722,7 +801,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     stopTime = time.perf_counter()
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
-    return X, Y, Z, Vx, Vy, Vz, tri
+    return X, Y, Z, Vx, Vy, Vz, U, V, tri
 
 # generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
 def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour, upsample=False):
@@ -905,16 +984,11 @@ def createVTKModel(X, Y, Z, triangles, filePath):
     # write to VTK file
     unstructuredGridToVTK(filePath, X, Y, Z, connectivity=conn, offsets=offset, cell_types=ctype)
 
-def mountainPlot(x, y, thickness, numSlices, numPointsPerContour, upsample=False):
-
-    # reduce number of points by 1 to account for removal of duplicate point from fat map (since first and last point
-    # of the closed surface are the same)
-    numPointsPerContour -= 1
+def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, upsample=False):
 
     # set up parameters for spline fit
     numControlPointsU = 4
     numControlPointsV = 4
-    degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     numCalcControlPointsU = numControlPointsU + degree
