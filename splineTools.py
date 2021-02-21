@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
+from matplotlib.tri import TriAnalyzer
 from matplotlib.tri import triangulation as mtra
 import matplotlib.pyplot as plt
 
@@ -8,6 +9,7 @@ from pyevtk.vtk import VtkTriangle
 
 from skimage import measure
 from skimage import segmentation
+from skimage import filters
 import time
 
 # this function performs a polar reordering of points
@@ -612,7 +614,7 @@ def getFatDeposits(X, thicknessByPoint, numSlices):
     deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
 
     deposits = reshape_array(deposit_labels, (X.shape[0], X.shape[1]))
-
+    
     # consider this as an alternative
     # deposit_labels = segmentation.watershed(thicknessByPoint, 5, mask=thicknessBinary)
     # numDeposits = len(np.unique(deposit_labels)) - 1
@@ -640,8 +642,8 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
 
     # expand the deposits by a small distance and create a mask such that
     # they can be made to "hug" the surface
-    expandedDep = segmentation.expand_labels(deposits, 1)
-    expandedMask = deposits ^ expandedDep
+    # expandedDep = segmentation.expand_labels(deposits, 1)
+    # expandedMask = deposits ^ expandedDep
 
     for k in labels[1:]:
 
@@ -676,7 +678,7 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
                         fatPointsZ[index] = thisZ
 
                         index += 1
-                    # make surface point a part of the fat surface
+                    # #make surface point a part of the fat surface
                     # elif expandedMask[i, j] == k:
                     #     fatPointsX[index] = X[i, j]
                     #     fatPointsY[index] = Y[i, j]

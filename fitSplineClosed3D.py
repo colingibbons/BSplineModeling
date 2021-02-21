@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/vtkModels/'
+# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/vtkModels/'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
@@ -21,14 +21,14 @@ vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/vtk
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
 
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
 
-startFrame = 3
-stopFrame = 8
+startFrame = 2
+stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
 # read in points from files
@@ -196,11 +196,6 @@ crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z)
 thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
                                                                            numPointsPerContour, numFatPointsPerSlice)
 
-# get points that will be used to create fat spline surface
-fatSurfaceX, fatSurfaceY, fatSurfaceZ = splineTools.getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y,
-                                                                        Z, numSlices, numPointsPerContour)
-
-# ax.scatter(fatSurfaceX, fatSurfaceY, fatSurfaceZ, marker='s', s=4, c='black')
 
 # # plot each normal vector one at a time along with the fat points associated with it
 # zz = np.linspace(np.min(Z), np.max(Z), numSlices)
@@ -276,7 +271,7 @@ plt.title('Fat Deposit Segmentation')
 plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
 plt.ylabel('Elevation ({})'.format(numSlices))
 
-degree = 3
+degree = 6
 mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
                                             upsample=True)
 
@@ -291,38 +286,15 @@ mZ *= scaleFactor
 # mZ2 += scaleFactor
 
 fig = plt.figure()
-ax = fig.add_subplot(1, 2, 1, projection='3d')
+ax = fig.gca(projection='3d')
 ax.plot_trisurf(np.ravel(mX), np.ravel(mY), np.ravel(mZ), triangles=mTri.triangles, antialiased=True)
-plt.title('Degree: 3')
-# ax = fig.add_subplot(1, 2, 2, projection='3d')
-# plt.title('Degree: 6')
-# ax.plot_trisurf(np.ravel(mX2), np.ravel(mY2), np.ravel(mZ2), triangles=mTri2.triangles, antialiased=True)
+plt.title('Fat Mountain Plot. Degree: {}'.format(degree))
 plt.show()
 
 
 # generate fat surface points
 fatDepositsX, fatDepositsY, fatDepositsZ, fatDepositTris = splineTools.altFatSurfacePoints(X, Y, Z, U, V, crossX,
                                                                                            crossY, mZ, deposits, 0)
-
-# labels = np.unique(deposits)
-# for j in labels[1:]:
-#     thickness = np.copy(thicknessByPoint)
-#     thickness[deposits != j] = 0
-#     mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thickness, numSlices, numPointsPerContour, upsample=False)
-#     fig = plt.figure()
-#     ax = fig.gca(projection='3d')
-#     ax.plot_trisurf(np.ravel(mX), np.ravel(mY), np.ravel(mZ), triangles=mTri.triangles, antialiased=True)
-#     plt.title('Deposit with label {}'.format(j))
-# plt.show()
-
-# # create individual B-spline curves representing each of the fat deposits
-# fatDepositsX, fatDepositsY, fatDepositsZ, fatDepositTriangles = splineTools.generateFatDepositSplines(X, Y, Z,
-#                                                                                                       fatSurfaceX,
-#                                                                                                       fatSurfaceY,
-#                                                                                                       fatSurfaceZ,
-#                                                                                                       deposits,
-#                                                                                                       numDeposits)
-
 
 ########################################################################################################################
 # plot control points and the surface on the same plot
@@ -341,10 +313,6 @@ ax.plot_trisurf(np.ravel(X), np.ravel(Y), np.ravel(Z), triangles=tri.triangles, 
 for k in range(len(fatDepositsX)):
     ax.plot_trisurf(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], triangles=fatDepositTris[k].triangles,
                     antialiased=True, color='yellow')
-
-# # plot the fat surfaces
-# for i in range(len(fatDepositsX)):
-#     ax.plot_surface(fatDepositsX[i], fatDepositsY[i], fatDepositsZ[i], color='yellow')
 
 # show plot with fat surfaces
 plt.show()
@@ -390,13 +358,16 @@ ax.set_ylim(minY, maxY)
 ax.set_zlim(minZ, maxZ)
 
 # plot right side
-ax.plot_surface(rightX, rightY, rightZ, color='blue')
+ax.plot_trisurf(np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ), triangles=lTri.triangles, antialiased=True,
+                color='blue')
 
 # plot left side
-ax.plot_surface(leftX, leftY, leftZ, color='red')
+ax.plot_trisurf(np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ), triangles=rTri.triangles, antialiased=True,
+                color='red')
 
-# plot fat
-ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
+for j in range(len(fatDepositsX)):
+    ax.plot_trisurf(np.ravel(fatDepositsX[j]), np.ravel(fatDepositsY[j]), np.ravel(fatDepositsZ[j]),
+                    triangles=fatDepositTris[j].triangles, antialiased=True, color='yellow')
 
 # show all splines in the same plot
 plt.show()
