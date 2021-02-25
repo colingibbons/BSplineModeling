@@ -3,9 +3,11 @@ from scipy.spatial.distance import euclidean
 from matplotlib.tri import TriAnalyzer
 from matplotlib.tri import triangulation as mtra
 import matplotlib.pyplot as plt
+import cv2
 
 from pyevtk.hl import unstructuredGridToVTK
 from pyevtk.vtk import VtkTriangle
+import pyvtk
 
 from skimage import measure
 from skimage import segmentation
@@ -642,16 +644,32 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
 
     # expand the deposits by a small distance and create a mask such that
     # they can be made to "hug" the surface
-    # expandedDep = segmentation.expand_labels(deposits, 1)
-    # expandedMask = deposits ^ expandedDep
+    # expandedDep1 = segmentation.expand_labels(deposits, 1)
+    # expandedDep2 = segmentation.expand_labels(deposits, 2)
+    # expandedMask1 = expandedDep1 ^ deposits
+    # expandedMask2 = expandedDep2 ^ deposits
+    # expandedMask2X = expandedMask2 ^ expandedMask1
 
     for k in labels[1:]:
 
+        depCopy = deposits.copy()
+        depCopy[depCopy != k] = 0
+
+        contours, hierarchy = cv2.findContours(depCopy, cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_NONE)
+
+        contours = contours[0]
+        out = np.zeros_like(deposits)
+
+        cv2.drawContours(out, contours, -1, 255, 1)
+
+        plt.figure()
+        plt.imshow(out)
+        plt.show()
         uParam = U[(deposits == k) & (fatThicknessZ > threshold)]
         vParam = V[(deposits == k) & (fatThicknessZ > threshold)]
 
-        # uParam = U[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask == k)]
-        # vParam = V[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask == k)]
+        # uParam = U[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask2 == k)]
+        # vParam = V[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask2 == k)]
 
         fLength = len(uParam)
         fatPointsX = np.zeros(fLength)
@@ -662,6 +680,12 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
         try:
             # create fat point triangulation based on parameter values
             fatTri = mtra.Triangulation(uParam, vParam)
+
+            alpha = 1
+            triangles = fatTri.triangles
+
+            mask = np.hypot(uParam[triangles].mean(axis=1), vParam[triangles].mean(axis=1))
+            fatTri.set_mask(mask < alpha)
 
             # check to make sure length is at least 3 - otherwise triangulation will fail
             index = 0
@@ -679,7 +703,17 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
 
                         index += 1
                     # #make surface point a part of the fat surface
-                    # elif expandedMask[i, j] == k:
+                    # elif expandedMask1[i, j] == k:
+                    #     thisX = X[i, j] + ((fatThicknessZ[i, j] / 2) * crossX[i, j])
+                    #     thisY = Y[i, j] + ((fatThicknessZ[i, j] / 2) * crossY[i, j])
+                    #     thisZ = Z[i, j]
+                    #
+                    #     fatPointsX[index] = thisX
+                    #     fatPointsY[index] = thisY
+                    #     fatPointsZ[index] = thisZ
+                    #
+                    #     index += 1
+                    # elif expandedMask2X[i, j] == k:
                     #     fatPointsX[index] = X[i, j]
                     #     fatPointsY[index] = Y[i, j]
                     #     fatPointsZ[index] = Z[i, j]
@@ -989,8 +1023,8 @@ def createVTKModel(X, Y, Z, triangles, filePath):
 def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, upsample=False):
 
     # set up parameters for spline fit
-    numControlPointsU = 4
-    numControlPointsV = 4
+    numControlPointsU = 5
+    numControlPointsV = 5
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     numCalcControlPointsU = numControlPointsU + degree

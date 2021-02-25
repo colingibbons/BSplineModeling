@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib
 from os.path import isdir
 from os import mkdir
+import yaml
+import cv2
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -9,11 +11,11 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/307-POST/vtkModels/'
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/vtkModels/'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
@@ -21,11 +23,11 @@ import splineTools
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
 
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
 
 startFrame = 2
 stopFrame = 7
@@ -271,19 +273,12 @@ plt.title('Fat Deposit Segmentation')
 plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
 plt.ylabel('Elevation ({})'.format(numSlices))
 
-degree = 6
+degree = 3
 mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
                                             upsample=True)
 
 scaleFactor = np.max(thicknessByPoint) / np.max(mZ)
 mZ *= scaleFactor
-
-# degree = 6
-# mX2, mY2, mZ2, mTri2 = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
-#                                                 upsample=True)
-#
-# scaleFactor = np.max(thicknessByPoint) / np.max(mZ2)
-# mZ2 += scaleFactor
 
 fig = plt.figure()
 ax = fig.gca(projection='3d')
@@ -389,4 +384,23 @@ splineTools.createVTKModel(leftX, leftY, leftZ, lTri, leftPath)
 for k in range(len(fatDepositsX)):
     depositPath = vtkPath + 'fatDeposit_{}'.format(k)
     splineTools.createVTKModel(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], fatDepositTris[k], depositPath)
+
+# populate YAML file data in preparation for writing
+numFat = len(fatDepositsX)
+surfaces = [None]*(numFat+2)
+surfaces[0] = {'name': 'Left Ventricle', 'filename': 'leftSide.vtu', 'opacity3D': 0.7, 'color':
+               {'r': 1, 'g': 0, 'b': 0}}
+surfaces[1] = {'name': 'Right Ventricle', 'filename': 'rightSide.vtu', 'opacity3D': 0.7, 'color':
+               {'r': 0, 'g': 0, 'b': 1}}
+for i in range(numFat):
+    surfaces[i+2] = {'name': 'Fat Deposit {}'.format(i), 'filename': 'fatDeposit_{}.vtu'.format(i), 'opacity3D': 0.7,
+                     'color': {'r': 255, 'g': 255, 'b': 0}}
+
+# create and write the YAML file
+data = {'surfaces': surfaces}
+ymlPath = vtkPath + 'fatHeartModel.yml'
+with open(ymlPath, 'w+') as f:
+    yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
 
