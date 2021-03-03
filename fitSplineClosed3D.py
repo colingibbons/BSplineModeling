@@ -90,7 +90,7 @@ X, Y, Z, Vx, Vy, Vz, U, V, tri = splineTools.fitSplineClosed3D(resampX, resampY,
                                                                numControlPointsV, degree, numPointsPerContour,
                                                                numSlices, upsample=True)
 
-# update number of points per contour in case upsampling was applied
+# update number of points per contour in case resampling was applied
 numPointsPerContour = X.shape[1]
 
 # calculate the error of the fit between surface and resampled data
@@ -373,27 +373,27 @@ if not isdir(vtkPath):
     mkdir(vtkPath)
 
 # generate vtk model for right myo
-rightPath = vtkPath + 'rightSide'
+rightPath = vtkPath + 'rightSide.vtk'
 splineTools.createVTKModel(rightX, rightY, rightZ, rTri, rightPath)
 
 # generate vtk model for left myo
-leftPath = vtkPath + 'leftSide'
+leftPath = vtkPath + 'leftSide.vtk'
 splineTools.createVTKModel(leftX, leftY, leftZ, lTri, leftPath)
 
 # generate vtk model for fat deposits
 for k in range(len(fatDepositsX)):
-    depositPath = vtkPath + 'fatDeposit_{}'.format(k)
+    depositPath = vtkPath + 'fatDeposit_{}.vtk'.format(k)
     splineTools.createVTKModel(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], fatDepositTris[k], depositPath)
 
 # populate YAML file data in preparation for writing
 numFat = len(fatDepositsX)
 surfaces = [None]*(numFat+2)
-surfaces[0] = {'name': 'Left Ventricle', 'filename': 'leftSide.vtu', 'opacity3D': 0.7, 'color':
+surfaces[0] = {'name': 'Left Ventricle', 'filename': 'leftSide.vtk', 'opacity3D': 0.7, 'color':
                {'r': 1, 'g': 0, 'b': 0}}
-surfaces[1] = {'name': 'Right Ventricle', 'filename': 'rightSide.vtu', 'opacity3D': 0.7, 'color':
+surfaces[1] = {'name': 'Right Ventricle', 'filename': 'rightSide.vtk', 'opacity3D': 0.7, 'color':
                {'r': 0, 'g': 0, 'b': 1}}
 for i in range(numFat):
-    surfaces[i+2] = {'name': 'Fat Deposit {}'.format(i), 'filename': 'fatDeposit_{}.vtu'.format(i), 'opacity3D': 0.7,
+    surfaces[i+2] = {'name': 'Fat Deposit {}'.format(i), 'filename': 'fatDeposit_{}.vtk'.format(i), 'opacity3D': 0.7,
                      'color': {'r': 255, 'g': 255, 'b': 0}}
 
 # create and write the YAML file

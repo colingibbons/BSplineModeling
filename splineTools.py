@@ -4,6 +4,7 @@ from matplotlib.tri import TriAnalyzer
 from matplotlib.tri import triangulation as mtra
 import matplotlib.pyplot as plt
 import cv2
+import pyvista as pv
 
 from pyevtk.hl import unstructuredGridToVTK
 from pyevtk.vtk import VtkTriangle
@@ -657,19 +658,23 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
 
         contours, hierarchy = cv2.findContours(depCopy, cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_NONE)
 
-        contours = contours[0]
+        largest = 0
+        for c in contours:
+            if c.shape[0] > largest:
+                largest = c.shape[0]
+                outsideContour = c
+
         out = np.zeros_like(deposits)
+        cv2.drawContours(out, outsideContour, -1, int(k), 3)
 
-        cv2.drawContours(out, contours, -1, 255, 1)
-
-        plt.figure()
-        plt.imshow(out)
-        plt.show()
+        # plt.figure()
+        # plt.imshow(out)
+        # plt.show()
         uParam = U[(deposits == k) & (fatThicknessZ > threshold)]
         vParam = V[(deposits == k) & (fatThicknessZ > threshold)]
 
-        # uParam = U[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask2 == k)]
-        # vParam = V[((deposits == k) & (fatThicknessZ > threshold)) | (expandedMask2 == k)]
+        # uParam = U[((deposits == k) & (fatThicknessZ > threshold)) | (out == k)]
+        # vParam = V[((deposits == k) & (fatThicknessZ > threshold)) | (out == k)]
 
         fLength = len(uParam)
         fatPointsX = np.zeros(fLength)
@@ -680,12 +685,6 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
         try:
             # create fat point triangulation based on parameter values
             fatTri = mtra.Triangulation(uParam, vParam)
-
-            alpha = 1
-            triangles = fatTri.triangles
-
-            mask = np.hypot(uParam[triangles].mean(axis=1), vParam[triangles].mean(axis=1))
-            fatTri.set_mask(mask < alpha)
 
             # check to make sure length is at least 3 - otherwise triangulation will fail
             index = 0
@@ -702,8 +701,8 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
                         fatPointsZ[index] = thisZ
 
                         index += 1
-                    # #make surface point a part of the fat surface
-                    # elif expandedMask1[i, j] == k:
+                    # # make surface point a part of the fat surface
+                    # elif out[i, j] == k:
                     #     thisX = X[i, j] + ((fatThicknessZ[i, j] / 2) * crossX[i, j])
                     #     thisY = Y[i, j] + ((fatThicknessZ[i, j] / 2) * crossY[i, j])
                     #     thisZ = Z[i, j]
@@ -713,9 +712,9 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
                     #     fatPointsZ[index] = thisZ
                     #
                     #     index += 1
-                    # elif expandedMask2X[i, j] == k:
-                    #     fatPointsX[index] = X[i, j]
-                    #     fatPointsY[index] = Y[i, j]
+                    # elif out[i, j] == k:
+                    #     fatPointsX[index] = X[i, j] + (0.1 * crossX[i, j])
+                    #     fatPointsY[index] = Y[i, j] + (0.1 * crossY[i, j])
                     #     fatPointsZ[index] = Z[i, j]
                     #
                     #     index += 1
@@ -821,11 +820,12 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     Vz = newVz
 
     # generate a larger parameterization array before evaluating the tensor product
+    upValue = max(numPointsPerContour, 100)
     if upsample:
         uMin = np.min(U)
         uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, 100)
-        vVect = np.linspace(0, 1, 100)
+        uVect = np.linspace(uMin, uMax, upValue)
+        vVect = np.linspace(0, 1, upValue)
         U, V = np.meshgrid(uVect, vVect)
 
     # generate triangles for use in VTK models
@@ -1004,21 +1004,17 @@ def createVTKModel(X, Y, Z, triangles, filePath):
     Y = np.ravel(Y)
     Z = np.ravel(Z)
 
+    verts = np.column_stack((X, Y, Z))
+
     # get number of points - points will act as vertices for the triangular cells
-    numVerts = triangles.triangles.shape[0] + 1
+    numVerts = triangles.triangles.shape[0]
+    numSides = np.full((1, numVerts), 3)
+    faces = np.concatenate((numSides.T, triangles.triangles), axis=1)
 
-    # all cells will be triangles
-    ctype = np.zeros(numVerts)
-    ctype.fill(VtkTriangle.tid)
+    # generate the polydata object for this data and save it to a VTK file
+    surf = pv.PolyData(verts, faces)
+    surf.save(filePath, binary=False)
 
-    # generate offsets for the indices of the vertices that comprise each cell
-    offset = np.arange(0, 3 * numVerts, 3)
-
-    # create array that indicates how the vertices should be connected
-    conn = np.ravel(triangles.triangles)
-
-    # write to VTK file
-    unstructuredGridToVTK(filePath, X, Y, Z, connectivity=conn, offsets=offset, cell_types=ctype)
 
 def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, upsample=False):
 
@@ -1086,11 +1082,12 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, upsamp
     Vz = np.transpose(np.matmul(Vz, pinvC))
 
     # generate larger parameterization array if upsampling option is selected
+    upValue = max(numPointsPerContour, 100)
     if upsample:
         uMin = np.min(U)
         uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, 100)
-        vVect = np.linspace(0, 1, 100)
+        uVect = np.linspace(uMin, uMax, upValue)
+        vVect = np.linspace(0, 1, upValue)
         U, V = np.meshgrid(uVect, vVect)
 
     tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
