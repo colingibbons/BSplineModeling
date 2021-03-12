@@ -4,6 +4,7 @@ from os.path import isdir
 from os import mkdir
 import yaml
 import cv2
+import pyvista as pv
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -280,37 +281,56 @@ mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numS
 scaleFactor = np.max(thicknessByPoint) / np.max(mZ)
 mZ *= scaleFactor
 
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-ax.plot_trisurf(np.ravel(mX), np.ravel(mY), np.ravel(mZ), triangles=mTri.triangles, antialiased=True)
-plt.title('Fat Mountain Plot. Degree: {}'.format(degree))
-plt.show()
+# fig = plt.figure()
+# ax = fig.add_subplot(3, 1, 1)
+# plt.imshow(mZ, cmap='inferno')
+# plt.title('fat thickness mountain heat map')
+# ax = fig.add_subplot(3, 1, 2)
+# mZ[mZ < 0] = 0
+# plt.imshow(mZ, cmap='inferno')
+# plt.title('threshold = 1')
+# ax = fig.add_subplot(3, 1, 3)
+# mZ[mZ < 2] = 0
+# plt.imshow(mZ, cmap='inferno')
+# plt.show()
 
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
+# ax.plot_trisurf(np.ravel(mX), np.ravel(mY), np.ravel(mZ), triangles=mTri.triangles, antialiased=True)
+# plt.title('Fat Mountain Plot. Degree: {}'.format(degree))
+# plt.show()
 
 # generate fat surface points
-fatDepositsX, fatDepositsY, fatDepositsZ, fatDepositTris = splineTools.altFatSurfacePoints(X, Y, Z, U, V, crossX,
-                                                                                           crossY, mZ, deposits, 0)
+fatPolyData = splineTools.moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, mZ, deposits, 0.75)
+fatPolyData.clean(inplace=True)
+
+edges = fatPolyData.extract_feature_edges()
+outline = fatPolyData.outline()
+bodies = fatPolyData.split_bodies()
+bodies.plot()
+slc = fatPolyData.slice((1, 1, 1))
+#edges.plot()
 
 ########################################################################################################################
-# plot control points and the surface on the same plot
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-ax.set_title('Heart surface with fat deposits')
-ax.view_init(elevation, azimuth)
-ax.set_xlim(minX, maxX)
-ax.set_ylim(minY, maxY)
-ax.set_zlim(minZ, maxZ)
-
-# plot the myocardium surface
-ax.plot_trisurf(np.ravel(X), np.ravel(Y), np.ravel(Z), triangles=tri.triangles, antialiased=True)
-
-# plot the fat surfaces
-for k in range(len(fatDepositsX)):
-    ax.plot_trisurf(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], triangles=fatDepositTris[k].triangles,
-                    antialiased=True, color='yellow')
-
-# show plot with fat surfaces
-plt.show()
+# # plot control points and the surface on the same plot
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
+# ax.set_title('Heart surface with fat deposits')
+# ax.view_init(elevation, azimuth)
+# ax.set_xlim(minX, maxX)
+# ax.set_ylim(minY, maxY)
+# ax.set_zlim(minZ, maxZ)
+#
+# # plot the myocardium surface
+# ax.plot_trisurf(np.ravel(X), np.ravel(Y), np.ravel(Z), triangles=tri.triangles, antialiased=True)
+#
+# # # plot the fat surfaces
+# # for k in range(len(fatDepositsX)):
+# #     ax.plot_trisurf(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], triangles=fatDepositTris[k].triangles,
+# #                     antialiased=True, color='yellow')
+#
+# # show plot with fat surfaces
+# plt.show()
 
 ########################################################################################################################
 # perform spline routine for right side
@@ -343,29 +363,25 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 leftX, leftY, leftZ, lVx, lVy, lVz, lU, lV, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
                                                                                  numControlPointsV, degree, numPointsPerContour,
                                                                                  numSlices, upsample=True)
-# plot both sides of the surface along with the fat splines
-fig = plt.figure()
-ax = fig.gca(projection='3d')
-ax.set_title('Heart spline model with fat deposits')
-ax.view_init(elevation, azimuth)
-ax.set_xlim(minX, maxX)
-ax.set_ylim(minY, maxY)
-ax.set_zlim(minZ, maxZ)
-
-# plot right side
-ax.plot_trisurf(np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ), triangles=lTri.triangles, antialiased=True,
-                color='blue')
-
-# plot left side
-ax.plot_trisurf(np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ), triangles=rTri.triangles, antialiased=True,
-                color='red')
-
-for j in range(len(fatDepositsX)):
-    ax.plot_trisurf(np.ravel(fatDepositsX[j]), np.ravel(fatDepositsY[j]), np.ravel(fatDepositsZ[j]),
-                    triangles=fatDepositTris[j].triangles, antialiased=True, color='yellow')
-
-# show all splines in the same plot
-plt.show()
+# # plot both sides of the surface along with the fat splines
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
+# ax.set_title('Heart spline model with fat deposits')
+# ax.view_init(elevation, azimuth)
+# ax.set_xlim(minX, maxX)
+# ax.set_ylim(minY, maxY)
+# ax.set_zlim(minZ, maxZ)
+#
+# # plot right side
+# ax.plot_trisurf(np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ), triangles=lTri.triangles, antialiased=True,
+#                 color='blue')
+#
+# # plot left side
+# ax.plot_trisurf(np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ), triangles=rTri.triangles, antialiased=True,
+#                 color='red')
+#
+# # show all splines in the same plot
+# plt.show()
 
 ########################################################################################################################
 # check for vtk model folder, and create it if it does not already exist
@@ -380,21 +396,25 @@ splineTools.createVTKModel(rightX, rightY, rightZ, rTri, rightPath)
 leftPath = vtkPath + 'leftSide.vtk'
 splineTools.createVTKModel(leftX, leftY, leftZ, lTri, leftPath)
 
-# generate vtk model for fat deposits
-for k in range(len(fatDepositsX)):
-    depositPath = vtkPath + 'fatDeposit_{}.vtk'.format(k)
-    splineTools.createVTKModel(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], fatDepositTris[k], depositPath)
+# # generate vtk model for fat deposits
+# for k in range(len(fatDepositsX)):
+#     depositPath = vtkPath + 'fatDeposit_{}.vtk'.format(k)
+#     splineTools.createVTKModel(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], fatDepositTris[k], depositPath)
 
+fatPath = vtkPath + 'fat.vtk'
+fatPolyData.save(fatPath, binary=False)
 # populate YAML file data in preparation for writing
-numFat = len(fatDepositsX)
-surfaces = [None]*(numFat+2)
-surfaces[0] = {'name': 'Left Ventricle', 'filename': 'leftSide.vtk', 'opacity3D': 0.7, 'color':
+# numFat = len(fatDepositsX)
+surfaces = [None]*3
+surfaces[0] = {'name': 'Left Myocardium', 'filename': 'LeftMyocardium.vtk', 'opacity3D': 1.0, 'color':
                {'r': 1, 'g': 0, 'b': 0}}
-surfaces[1] = {'name': 'Right Ventricle', 'filename': 'rightSide.vtk', 'opacity3D': 0.7, 'color':
+surfaces[1] = {'name': 'Right Myocardium', 'filename': 'RightMyocardium.vtk', 'opacity3D': 1.0, 'color':
                {'r': 0, 'g': 0, 'b': 1}}
-for i in range(numFat):
-    surfaces[i+2] = {'name': 'Fat Deposit {}'.format(i), 'filename': 'fatDeposit_{}.vtk'.format(i), 'opacity3D': 0.7,
-                     'color': {'r': 255, 'g': 255, 'b': 0}}
+surfaces[2] = {'name': 'Fat', 'filename': 'Fat.vtk', 'opacity3D': 0.7, 'color':
+               {'r': 1, 'g': 1, 'b': 0}}
+# for i in range(numFat):
+#     surfaces[i+2] = {'name': 'Fat Deposit {}'.format(i), 'filename': 'fatDeposit_{}.vtk'.format(i), 'opacity3D': 0.7,
+#                      'color': {'r': 255, 'g': 255, 'b': 0}}
 
 # create and write the YAML file
 data = {'surfaces': surfaces}

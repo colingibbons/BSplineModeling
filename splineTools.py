@@ -234,7 +234,7 @@ def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V):
             Y[m, n] = sumy
             Z[m, n] = sumz
 
-            print('param values:', m, n)
+            print(f'param values: {m} {n}')
 
     return X, Y, Z
 
@@ -244,7 +244,7 @@ def readSlicePoints(baseName, startFrame, stopFrame):
     numPointsPerContour = np.zeros(numSlices)
 
     for i in range(numSlices):
-        filePath = baseName + str(startFrame + i) + '.txt'
+        filePath = f'{baseName}{str(startFrame + i)}.txt'
         # TODO fix issue where an empty file will crash the program. e.g. if there is no right side points on a slice
         with open(filePath) as f:
             for j, k in enumerate(f):
@@ -643,14 +643,6 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
     # loop through each segmented fat deposit, excluding label 0 (where fat thickness = 0)
     labels = np.unique(deposits)
 
-    # expand the deposits by a small distance and create a mask such that
-    # they can be made to "hug" the surface
-    # expandedDep1 = segmentation.expand_labels(deposits, 1)
-    # expandedDep2 = segmentation.expand_labels(deposits, 2)
-    # expandedMask1 = expandedDep1 ^ deposits
-    # expandedMask2 = expandedDep2 ^ deposits
-    # expandedMask2X = expandedMask2 ^ expandedMask1
-
     for k in labels[1:]:
 
         depCopy = deposits.copy()
@@ -667,14 +659,8 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
         out = np.zeros_like(deposits)
         cv2.drawContours(out, outsideContour, -1, int(k), 3)
 
-        # plt.figure()
-        # plt.imshow(out)
-        # plt.show()
         uParam = U[(deposits == k) & (fatThicknessZ > threshold)]
         vParam = V[(deposits == k) & (fatThicknessZ > threshold)]
-
-        # uParam = U[((deposits == k) & (fatThicknessZ > threshold)) | (out == k)]
-        # vParam = V[((deposits == k) & (fatThicknessZ > threshold)) | (out == k)]
 
         fLength = len(uParam)
         fatPointsX = np.zeros(fLength)
@@ -701,23 +687,6 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
                         fatPointsZ[index] = thisZ
 
                         index += 1
-                    # # make surface point a part of the fat surface
-                    # elif out[i, j] == k:
-                    #     thisX = X[i, j] + ((fatThicknessZ[i, j] / 2) * crossX[i, j])
-                    #     thisY = Y[i, j] + ((fatThicknessZ[i, j] / 2) * crossY[i, j])
-                    #     thisZ = Z[i, j]
-                    #
-                    #     fatPointsX[index] = thisX
-                    #     fatPointsY[index] = thisY
-                    #     fatPointsZ[index] = thisZ
-                    #
-                    #     index += 1
-                    # elif out[i, j] == k:
-                    #     fatPointsX[index] = X[i, j] + (0.1 * crossX[i, j])
-                    #     fatPointsY[index] = Y[i, j] + (0.1 * crossY[i, j])
-                    #     fatPointsZ[index] = Z[i, j]
-                    #
-                    #     index += 1
 
             # add fat points and triangles to deposit lists
             depositsX.append(fatPointsX)
@@ -730,6 +699,53 @@ def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, 
             pass
 
     return depositsX, depositsY, depositsZ, depositTris
+
+def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, threshold):
+
+    numU, numV = X.shape
+
+    uParam = U[fatThicknessZ > threshold]
+
+    fLength = len(uParam)
+    fatPointsX = np.zeros(2 * fLength)
+    fatPointsY = np.zeros(2 * fLength)
+    fatPointsZ = np.zeros(2 * fLength)
+
+    index = 0
+    for i in range(numU):
+        for j in range(numV):
+            if fatThicknessZ[i, j] > threshold:
+                # calculate point location along normal vector based on fat thickness at that point
+                thisX = X[i, j] + (fatThicknessZ[i, j] * crossX[i, j])
+                thisY = Y[i, j] + (fatThicknessZ[i, j] * crossY[i, j])
+                thisZ = Z[i, j]
+
+                fatPointsX[index] = thisX
+                fatPointsY[index] = thisY
+                fatPointsZ[index] = thisZ
+
+                index += 1
+
+    # add surface points to close contour
+    for i in range(numU):
+        for j in range(numV):
+            if fatThicknessZ[i, j] > threshold:
+                fatPointsX[index] = X[i, j]
+                fatPointsY[index] = Y[i, j]
+                fatPointsZ[index] = Z[i, j]
+
+                index += 1
+
+    data = np.column_stack((fatPointsX, fatPointsY, fatPointsZ))
+    polydata = pv.PolyData(data)
+    pp = polydata.delaunay_3d(alpha=4.5, tol=0.005)
+    surf = pp.extract_surface()
+    # this function returns polydata object - might be useful if a way to get the desired triangles
+    # can be developed
+    #pv.helpers.make_tri_mesh(points, faces)
+
+    return surf
+
 
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
@@ -835,7 +851,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     startTime = time.perf_counter()
     X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
     stopTime = time.perf_counter()
-    print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
+    print(f"Tensor product evaluation took {stopTime-startTime} seconds")
 
     return X, Y, Z, Vx, Vy, Vz, U, V, tri
 
@@ -926,7 +942,7 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour, upsample=
     startTime = time.perf_counter()
     X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
     stopTime = time.perf_counter()
-    print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
+    print(f"Tensor product evaluation took {stopTime-startTime} seconds")
 
     return X, Y, Z, tri
 
