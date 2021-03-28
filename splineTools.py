@@ -736,13 +736,11 @@ def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposi
 
                 index += 1
 
+
     data = np.column_stack((fatPointsX, fatPointsY, fatPointsZ))
     polydata = pv.PolyData(data)
-    pp = polydata.delaunay_3d(alpha=4.5, tol=0.005)
+    pp = polydata.delaunay_3d(alpha=3.5, tol=0.005)
     surf = pp.extract_surface()
-    # this function returns polydata object - might be useful if a way to get the desired triangles
-    # can be developed
-    #pv.helpers.make_tri_mesh(points, faces)
 
     return surf
 
@@ -855,8 +853,8 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
 
     return X, Y, Z, Vx, Vy, Vz, U, V, tri
 
-# generates an open, 3D fat spline to represent a fat deposit at a given location around the myocardium
-def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour, upsample=False):
+# generates a clamped, 3D spline surface
+def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, upsample=False):
     # resample the data so each slice has the same number of points
     # do this by fitting each slice with B-spline curve
 
@@ -864,11 +862,11 @@ def fitSplineOpen3D(fatX, fatY, fatZ, numSlices, numPointsEachContour, upsample=
     resampleNumControlPoints = 4
     degree = 3
     resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-        reSampleAndSmoothPointsOpen(fatX, fatY, fatZ, numPointsEachContour, resampleNumControlPoints, degree)
+        reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, resampleNumControlPoints, degree)
 
     # set up parameters for spline fit
     numControlPointsU = 4
-    numControlPointsV = numSlices - 2
+    numControlPointsV = 4
     degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
