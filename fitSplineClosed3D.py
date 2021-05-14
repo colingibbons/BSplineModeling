@@ -3,7 +3,6 @@ import matplotlib
 from os.path import isdir
 from os import mkdir
 import yaml
-import cv2
 import pyvista as pv
 
 matplotlib.use("TkAgg")
@@ -24,15 +23,55 @@ import splineTools
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
 
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
 
-startFrame = 2
-stopFrame = 7
+startFrame = 3
+stopFrame = 8
 numSlices = (stopFrame - startFrame) + 1
+
+# resample the data so each slice has the same number of points
+# do this by fitting each slice with B-spline curve
+resampleNumControlPoints = 7
+degree = 3
+numControlPointsU = 9
+numControlPointsV = 6
+
+# # perform spline routine for right side
+# # read in points from files
+# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame)
+#
+# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+#     splineTools.reSampleAndSmoothPointsOpen(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+#
+# rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+#                                                              numControlPointsV, degree, numPointsPerContour, numSlices,
+#                                                            , fix_samples=True)
+#
+# # perform spline routine for left side
+# # read in points from files
+# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame)
+#
+# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+#     splineTools.reSampleAndSmoothPointsOpen(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+#
+# leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+#                                                                          numControlPointsV, degree, numPointsPerContour,
+#                                                                          numSlices, fix_samples=True)
+#
+# lVert = np.column_stack((np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ)))
+# LL = pv.PolyData(lVert)
+#
+# rVert = np.column_stack((np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ)))
+# RR = pv.PolyData(rVert)
+#
+# pl = pv.Plotter()
+# pl.add_mesh(LL, color='red')
+# pl.add_mesh(RR, color='blue')
+# pl.show()
 
 # read in points from files
 origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(fileName, startFrame, stopFrame)
@@ -81,15 +120,15 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 # plt.show()
 
 # set up parameters for spline fit
-numControlPointsU = 4
-numControlPointsV = 4
+numControlPointsU = 9
+numControlPointsV = 6
 degree = 3
 numCalcControlPointsU = numControlPointsU + degree
 
 # call function to perform outside point spline fitting
 X, Y, Z, Vx, Vy, Vz, U, V, tri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
                                                                numControlPointsV, degree, numPointsPerContour,
-                                                               numSlices, upsample=True)
+                                                               numSlices, fix_samples=True)
 
 # update number of points per contour in case resampling was applied
 numPointsPerContour = X.shape[1]
@@ -278,7 +317,7 @@ plt.ylabel('Elevation ({})'.format(numSlices))
 
 degree = 3
 mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
-                                            upsample=True)
+                                    fix_samples=True)
 
 scaleFactor = np.max(thicknessByPoint) / np.max(mZ)
 mZ *= scaleFactor
@@ -337,8 +376,13 @@ p.show()
 # read in points from files
 origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame)
 
-rightX, rightY, rightZ, rTri = splineTools.fitSplineOpen3D(origX, origY, origZ, numSlices, numPointsEachContour,
-                                                           upsample=True)
+resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+    splineTools.reSampleAndSmoothPointsOpen(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+
+rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
+                                                                            numControlPointsU, numControlPointsV,
+                                                                            degree, numPointsPerContour,
+                                                                            numSlices, fix_samples=True)
 
 # perform spline routine for left side
 # read in points from files
@@ -353,18 +397,8 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 
 leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
                                                                          numControlPointsV, degree, numPointsPerContour,
-                                                                         numSlices, upsample=True)
+                                                                         numSlices, fix_samples=True)
 
-# lVert = np.column_stack((np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ)))
-# LL = pv.PolyData(lVert)
-#
-# rVert = np.column_stack((np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ)))
-# RR = pv.PolyData(rVert)
-#
-# pl = pv.Plotter()
-# pl.add_mesh(LL)
-# pl.add_mesh(RR)
-# pl.show()
 ########################################################################################################################
 # check for vtk model folder, and create it if it does not already exist
 if not isdir(vtkPath):

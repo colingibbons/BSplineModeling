@@ -730,8 +730,8 @@ def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposi
     for i in range(numU):
         for j in range(numV):
             if fatThicknessZ[i, j] > threshold:
-                fatPointsX[index] = X[i, j]
-                fatPointsY[index] = Y[i, j]
+                fatPointsX[index] = X[i, j] + (0.1 * crossX[i, j])
+                fatPointsY[index] = Y[i, j] + (0.1 * crossY[i, j])
                 fatPointsZ[index] = Z[i, j]
 
                 index += 1
@@ -748,7 +748,7 @@ def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposi
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
 def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV, degree, numPointsPerContour,
-                      numSlices, upsample=False):
+                      numSlices, fix_samples=False):
     numCalcControlPointsU = numControlPointsU + degree
     m = numControlPointsU - 1
     n = numControlPointsV - 1
@@ -833,13 +833,12 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     Vy = newVy
     Vz = newVz
 
-    # generate a larger parameterization array before evaluating the tensor product
-    upValue = max(numPointsPerContour, 100)
-    if upsample:
+    # ensure that parameterization has a fixed size (100x100)
+    if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, upValue)
-        vVect = np.linspace(0, 1, upValue)
+        uVect = np.linspace(uMin, uMax, 100)
+        vVect = np.linspace(0, 1, 100)
         U, V = np.meshgrid(uVect, vVect)
 
     # generate triangles for use in VTK models
@@ -854,7 +853,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     return X, Y, Z, Vx, Vy, Vz, U, V, tri
 
 # generates a clamped, 3D spline surface
-def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, upsample=False):
+def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, fix_samples=False):
     # resample the data so each slice has the same number of points
     # do this by fitting each slice with B-spline curve
 
@@ -927,7 +926,7 @@ def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, upsample=False):
     Vz = np.transpose(np.matmul(Vz, pinvC))
 
     # generate larger parameterization array if upsampling option is selected
-    if upsample:
+    if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
         uVect = np.linspace(uMin, uMax, 100)
@@ -1001,7 +1000,7 @@ def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, de
             depositSplineX, depositSplineY, depositSplineZ, tri = fitSplineOpen3D(currentDepositX, currentDepositY,
                                                                                   currentDepositZ, numSlicesNonZero,
                                                                                   depositPointsEachContour,
-                                                                                  upsample=False)
+                                                                                  fix_sample=False)
 
             fatDepositsX.append(depositSplineX)
             fatDepositsY.append(depositSplineY)
@@ -1030,7 +1029,7 @@ def createVTKModel(X, Y, Z, triangles, filePath):
     surf.save(filePath, binary=False)
 
 
-def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, upsample=False):
+def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_samples=False):
 
     # set up parameters for spline fit
     numControlPointsU = 5
@@ -1095,13 +1094,12 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, upsamp
     Vz = np.matmul(pinvB, Pz)
     Vz = np.transpose(np.matmul(Vz, pinvC))
 
-    # generate larger parameterization array if upsampling option is selected
-    upValue = max(numPointsPerContour, 100)
-    if upsample:
+    # ensure that parameterization has fixed values (100x100)
+    if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, upValue)
-        vVect = np.linspace(0, 1, upValue)
+        uVect = np.linspace(uMin, uMax, 100)
+        vVect = np.linspace(0, 1, 100)
         U, V = np.meshgrid(uVect, vVect)
 
     tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
