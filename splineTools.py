@@ -41,6 +41,33 @@ def reOrder(points):
 
     return outPoints
 
+def reOrderOpen(points):
+    # find the proper location of the "gap" in the open curve by searching for the successive points that are the
+    # furthest away, and moving points such that the gap is between the first and last points
+    largestDist = 0
+    idx = 0
+    for i in range(-1, len(points)-1):
+        thisPoint = points[i]
+        nextPoint = points[i+1]
+
+        # calculate distance between successive points
+        dist = np.sqrt((thisPoint[0] - nextPoint[0])**2 + (thisPoint[1] - nextPoint[1])**2)
+        if dist > largestDist:
+            # update largest distance variable and index of gap if new largest is found
+            largestDist = dist
+            idx = i+1
+
+    # split the array at the index of largest gap between points
+    segment_1 = points[0:idx, :]
+    segment_2 = points[idx:, :]
+
+    # recombine such that the largest distance gap is "between" the first and last points, rather than in
+    # the middle of the array
+    reordered_points = np.concatenate((segment_2, segment_1), axis=0)
+
+    return reordered_points
+
+
 def parameterizeClosedCurve(points, knots, degree):
     # get number of points and create parameter array
     numPoints = len(points)
@@ -335,6 +362,8 @@ def fitSplineClosed2D(points, numControlPoints, degree):
     return b, tau, errorInFit
 
 def fitSplineOpen2D(points, numControlPoints, degree):
+
+    points = reOrderOpen(points)
 
     # get number of points
     numDataPoints = len(points)
@@ -864,8 +893,8 @@ def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, fix_samples=False)
         reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, resampleNumControlPoints, degree)
 
     # set up parameters for spline fit
-    numControlPointsU = 4
-    numControlPointsV = 4
+    numControlPointsU = 3
+    numControlPointsV = 3
     degree = 3
     m = numControlPointsU - 1
     n = numControlPointsV - 1
@@ -887,8 +916,6 @@ def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, fix_samples=False)
 
     # set up parameterization
     U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ, tauU, tauV, degree)
-
-    # U, V = parameterizeFat(resampX, resampY, resampZ, tauU, tauV, degree)
 
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
