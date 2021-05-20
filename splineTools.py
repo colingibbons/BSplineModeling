@@ -1,18 +1,13 @@
 import numpy as np
 from scipy.spatial.distance import euclidean
-from matplotlib.tri import TriAnalyzer
 from matplotlib.tri import triangulation as mtra
+from matplotlib.tri import TriAnalyzer
 import matplotlib.pyplot as plt
-import cv2
 import pyvista as pv
-
-from pyevtk.hl import unstructuredGridToVTK
-from pyevtk.vtk import VtkTriangle
-import pyvtk
 
 from skimage import measure
 from skimage import segmentation
-from skimage import filters
+from itertools import combinations
 import time
 
 # this function performs a polar reordering of points
@@ -66,7 +61,6 @@ def reOrderOpen(points):
     reordered_points = np.concatenate((segment_2, segment_1), axis=0)
 
     return reordered_points
-
 
 def parameterizeClosedCurve(points, knots, degree):
     # get number of points and create parameter array
@@ -234,10 +228,13 @@ def parameterizeFat(X, Y, Z, tauU, tauV, degree):
     return U, V
 
 
-def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V):
+def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=None):
 
     numParamPointsV, numParamPointsU = np.shape(U)
     numControlPointsV, numControlPointsU = np.shape(Vx)
+    numParam = numParamPointsU * numParamPointsV
+    progressIncrement = (1 / numParam) * 100
+    progressBarValue = 0
 
     X = np.zeros((numParamPointsV, numParamPointsU))
     Y = np.zeros((numParamPointsV, numParamPointsU))
@@ -261,17 +258,21 @@ def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V):
             Y[m, n] = sumy
             Z[m, n] = sumz
 
-            print(f'param values: {m} {n}')
+            if progressBar:
+                progressBarValue += progressIncrement
+                progressBar.setValue(progressBarValue)
+            else:
+                print('param values:', m, n)
 
     return X, Y, Z
 
-def readSlicePoints(baseName, startFrame, stopFrame):
+def readSlicePoints(baseName, startFrame, stopFrame, zSpacing):
 
     numSlices = (stopFrame - startFrame) + 1
     numPointsPerContour = np.zeros(numSlices)
 
     for i in range(numSlices):
-        filePath = f'{baseName}{str(startFrame + i)}.txt'
+        filePath = baseName + str(startFrame + i) + '.txt'
         # TODO fix issue where an empty file will crash the program. e.g. if there is no right side points on a slice
         with open(filePath) as f:
             for j, k in enumerate(f):
@@ -298,7 +299,7 @@ def readSlicePoints(baseName, startFrame, stopFrame):
         sliceFile.close()
         # for now, just evenly space the slices along the z-axis. Can figure out the conversion from the 1cm
         # gap between slices in reality and the coordinate space in which the splines are visualized later
-        Z[i, 0:numPointsPerContour[i]] = (startFrame + i) * 10
+        Z[i, 0:numPointsPerContour[i]] = (startFrame + i) * zSpacing
 
     return X, Y, Z, numPointsPerContour
 
@@ -361,31 +362,50 @@ def fitSplineClosed2D(points, numControlPoints, degree):
 
     return b, tau, errorInFit
 
-def fitSplineOpen2D(points, numControlPoints, degree):
+# performs a 2D spline fit without reordering points, such that right myo shape is retained.
+def fitSplineRightMyo2D(points, numControlPoints, degree):
 
-    points = reOrderOpen(points)
-
-    # get number of points
+    # copy another point to the end for a closed spline curve
+    points = np.append(points, [points[0]], 0)
     numDataPoints = len(points)
+
+    # set up parameters for spline fit
+    n = numControlPoints - 1
+    numCalcControlPoints = numControlPoints + degree
+
     # generate the knots (numKnots = n + 2d + 2)
-    numKnots = ((numControlPoints - 1) + degree + 1) + 1
+    numKnots = n + 2 * degree + 2
     tau = np.zeros(numKnots)
-    numOpenKnots = numKnots - (2*degree)
-    tau[degree:-degree] = np.linspace(0, 1, numOpenKnots)
-    tau[-degree:] = 1
+    numOpenKnots = n + degree + 1
+    tau[0:numOpenKnots] += np.linspace(0, 1, numOpenKnots)
+    for i in range(0, degree + 1):
+        diff = tau[i + 1] - tau[i]
+        tau[numOpenKnots + i] = tau[numOpenKnots + i - 1] + diff
 
     # set up parameterization
-    t = parameterizeOpenCurve(points)
+    t = parameterizeClosedCurve(points, tau, degree)
 
-    A_mat = np.zeros((numDataPoints, numControlPoints))
+    A_mat = np.zeros((numDataPoints, numCalcControlPoints))
 
     for j in range(numDataPoints):
-        for k in range(numControlPoints):
-            A_mat[j, k] = NVal(tau, t[j], k - 1, degree, 0)
+        for k in range(numCalcControlPoints):
+            A_mat[j][k] = NVal(tau, t[j], k - 1, degree, 0)
+
+    # create a constrained A matrix
+    A_mat_con = A_mat
+    A_mat_con[:, 0:degree] = A_mat_con[:, 0:degree] + A_mat_con[:, (numCalcControlPoints - degree):numCalcControlPoints]
+    temp_A_mat_con = A_mat_con[:, 0:numControlPoints]
+    A_mat_con = temp_A_mat_con
 
     # solve matrix equations for control points
-    b_mat = np.linalg.lstsq(A_mat, points, rcond=None)[0]
+    b_mat = np.linalg.lstsq(A_mat_con, points, rcond=None)[0]
     b = np.transpose(b_mat)
+
+    # duplicate last 'degree' control points
+    new_b = np.zeros((2, numCalcControlPoints))
+    new_b[:, 0:numControlPoints] = b
+    new_b[:, numControlPoints:numControlPoints + degree] = b[:, 0:degree]
+    b = new_b
 
     # calculate the spline
     interpCurve = BSVal(b, tau, t, 0)
@@ -454,7 +474,10 @@ def reSampleAndSmoothPoints(X, Y, Z, numPointsEachContour, numControlPoints, deg
 
     return newX, newY, newZ, newXControl, newYControl, newZControl, numPointsPerContour, totalError
 
-def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints, degree):
+# this function performs a resampling and 2D spline fit for each right myo slice. it differs from the routine used
+# for other surfaces in that it does not perform the angle-centroid-based point reordering, such that the distinct
+# shape of the right myocardium is retained
+def reSampleAndSmoothRightMyo(X, Y, Z, numPointsEachContour, numControlPoints, degree):
 
     # data is returned in 3 matrices, each with 'numSlices' rows
     # number of columns is what the data was resampled to
@@ -467,21 +490,24 @@ def reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, numControlPoints,
     newZ = np.zeros((numSlices, numPointsPerContour))
 
     # number of control points for a closed curve is increased by degree of curve
-    newXControl = np.zeros((numSlices, numControlPoints))
-    newYControl = np.zeros((numSlices, numControlPoints))
-    newZControl = np.zeros((numSlices, numControlPoints))
+    numCalcControlPoints = numControlPoints + degree
+    newXControl = np.zeros((numSlices, numCalcControlPoints))
+    newYControl = np.zeros((numSlices, numCalcControlPoints))
+    newZControl = np.zeros((numSlices, numCalcControlPoints))
 
     # now loop through the slices and fit each with a cubic B-spline curve
     totalError = 0
     for i in range(numSlices):
         # set up this array of points
         points = np.zeros((numPointsEachContour[i], 2))
-        #
+        # points[:, 0] = X[i, 0:numPointsEachContour[i]]
+        # points[:, 1] = Y[i, 0:numPointsEachContour[i]]
+
         points[:, 0] = X[i, X[i] != 0]
         points[:, 1] = Y[i, Y[i] != 0]
 
         # call the fitting function
-        b, tau, errorInFit = fitSplineOpen2D(points, numControlPoints, degree)
+        b, tau, errorInFit = fitSplineRightMyo2D(points, numControlPoints, degree)
         totalError += errorInFit
 
         # determine the support of the spline in the parameterization
@@ -573,9 +599,10 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
             thickness = 0
             # check each fat point for proximity to the line defined by normal vector
             for k in range(fatPointsPerSlice[i]):
-                ab = np.sqrt((xDir - X[index, j])**2 + (yDir - Y[index, j])**2)
-                ac = np.sqrt((xDir-fatX[i, k])**2 + (yDir - fatY[i, k])**2)
-                bc = np.sqrt((X[index, j] - fatX[i, k])**2 + (Y[index, j] - fatY[i, k])**2)
+
+                ab = np.sqrt((xDir - X[index, j]) ** 2 + (yDir - Y[index, j]) ** 2)
+                ac = np.sqrt((xDir - fatX[i, k]) ** 2 + (yDir - fatY[i, k]) ** 2)
+                bc = np.sqrt((X[index, j] - fatX[i, k]) ** 2 + (Y[index, j] - fatY[i, k]) ** 2)
 
                 is_on_segment = abs(ac + bc - ab) < 0.02
 
@@ -589,147 +616,7 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
 
     return thicknessByPoint, xFatPoints, yFatPoints
 
-# get the set of points that will be used to generate a single fat spline surface
-def getFatSurfacePoints(thicknessByPoint, xFatPoints, yFatPoints, X, Y, Z, numSlices, numPointsPerContour):
-
-    fatSurfaceX = np.zeros((numSlices, numPointsPerContour))
-    fatSurfaceY = np.zeros((numSlices, numPointsPerContour))
-    minZ = np.min(Z)
-    maxZ = np.max(Z)
-
-    # if upsampling was used, account for the fact that an offset must be applied to grab points in X/Y arrays that
-    # actually correspond with the slices where fat points are present
-    scaleFactor = X.shape[0] / numSlices
-
-    z = np.linspace(minZ, maxZ, numSlices)
-    fatSurfaceZ = np.transpose(np.tile(z, (numPointsPerContour, 1)))
-    for i in range(numSlices):
-        for j in range(numPointsPerContour):
-            index = np.floor(i*scaleFactor).astype(int)
-            surfacePoint = (X[index, j], Y[index, j])
-            if thicknessByPoint[i, j] == 0:
-                fatSurfaceX[i, j] = X[index, j]
-                fatSurfaceY[i, j] = Y[index, j]
-            else:
-                dist = 0
-                for x, y in zip(xFatPoints[i, j, :], yFatPoints[i, j, :]):
-                    if x == y == -1:
-                        pass
-                    else:
-                        fatDist = abs(euclidean(surfacePoint, (x, y)))
-                        if fatDist > dist:
-                            fatSurfaceX[i, j] = x
-                            fatSurfaceY[i, j] = y
-                            dist = fatDist
-
-    return fatSurfaceX, fatSurfaceY, fatSurfaceZ
-
-def reshape_array(array, newshape):
-    # changes the shape of a numpy array to match the scaling of the preprocessed .seg.nrrd array
-    assert len(array.shape) == len(newshape)
-
-    slices = [slice(0, old, float(old) / new) for old, new in zip(array.shape, newshape)]
-    coordinates = np.mgrid[slices]
-    indices = coordinates.astype('i')
-
-    return array[tuple(indices)]
-
-# generate a list of fat deposits to create a collection of fat splines that reflect the non-continuous nature
-# of fat surrounding the myocardium
-def getFatDeposits(X, thicknessByPoint, numSlices):
-    # create binarized version of thickness array for segmentation purposes
-    thicknessBinary = np.copy(thicknessByPoint)
-    thicknessBinary[thicknessBinary > 0] = 255
-
-    # isolate fat deposits and "label" them with different numeric values to differentiate them
-    fatDeposits = thicknessBinary > thicknessBinary.mean()
-    deposit_labels, numDeposits = measure.label(fatDeposits, background=0, return_num=True, connectivity=1)
-
-    deposits = reshape_array(deposit_labels, (X.shape[0], X.shape[1]))
-    
-    # consider this as an alternative
-    # deposit_labels = segmentation.watershed(thicknessByPoint, 5, mask=thicknessBinary)
-    # numDeposits = len(np.unique(deposit_labels)) - 1
-
-    # combine deposits on opposite ends of the azimuth into a single deposit if they are adjacent
-    for i in range(numSlices):
-        if deposit_labels[i, 0] != 0 and deposit_labels[i, -1] != 0:
-            obj = deposit_labels[i, -1]
-            deposit_labels[deposit_labels == obj] = deposit_labels[i, 0]
-
-    return deposits, numDeposits
-
-def altFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, threshold):
-
-    # determine size of iterables
-    numU, numV = X.shape
-
-    depositsX = []
-    depositsY = []
-    depositsZ = []
-    depositTris = []
-
-    # loop through each segmented fat deposit, excluding label 0 (where fat thickness = 0)
-    labels = np.unique(deposits)
-
-    for k in labels[1:]:
-
-        depCopy = deposits.copy()
-        depCopy[depCopy != k] = 0
-
-        contours, hierarchy = cv2.findContours(depCopy, cv2.RETR_FLOODFILL, cv2.CHAIN_APPROX_NONE)
-
-        largest = 0
-        for c in contours:
-            if c.shape[0] > largest:
-                largest = c.shape[0]
-                outsideContour = c
-
-        out = np.zeros_like(deposits)
-        cv2.drawContours(out, outsideContour, -1, int(k), 3)
-
-        uParam = U[(deposits == k) & (fatThicknessZ > threshold)]
-        vParam = V[(deposits == k) & (fatThicknessZ > threshold)]
-
-        fLength = len(uParam)
-        fatPointsX = np.zeros(fLength)
-        fatPointsY = np.zeros(fLength)
-        fatPointsZ = np.zeros(fLength)
-
-        # attempt triangulation first. if a failure occurs, move on to the next deposit
-        try:
-            # create fat point triangulation based on parameter values
-            fatTri = mtra.Triangulation(uParam, vParam)
-
-            # check to make sure length is at least 3 - otherwise triangulation will fail
-            index = 0
-            for i in range(numU):
-                for j in range(numV):
-                    if (deposits[i, j] == k) and (fatThicknessZ[i, j] > threshold):
-                        # calculate point location along normal vector based on fat thickness at that point
-                        thisX = X[i, j] + (fatThicknessZ[i, j] * crossX[i, j])
-                        thisY = Y[i, j] + (fatThicknessZ[i, j] * crossY[i, j])
-                        thisZ = Z[i, j]
-
-                        fatPointsX[index] = thisX
-                        fatPointsY[index] = thisY
-                        fatPointsZ[index] = thisZ
-
-                        index += 1
-
-            # add fat points and triangles to deposit lists
-            depositsX.append(fatPointsX)
-            depositsY.append(fatPointsY)
-            depositsZ.append(fatPointsZ)
-            depositTris.append(fatTri)
-        except RuntimeError:
-            pass
-        except ValueError:
-            pass
-
-    return depositsX, depositsY, depositsZ, depositTris
-
-def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposits, threshold):
+def generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, threshold):
 
     numU, numV = X.shape
 
@@ -740,13 +627,17 @@ def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposi
     fatPointsY = np.zeros(2 * fLength)
     fatPointsZ = np.zeros(2 * fLength)
 
+    # Since the fat thickness can be likened to the diagonal of a square, the x and y components must each be divided
+    # by a factor of sqrt(2) for the fat point location to accurately reflect the magnitude of the thickness
+    scaleFactor = 1 / np.sqrt(2)
+
     index = 0
     for i in range(numU):
         for j in range(numV):
             if fatThicknessZ[i, j] > threshold:
                 # calculate point location along normal vector based on fat thickness at that point
-                thisX = X[i, j] + (fatThicknessZ[i, j] * crossX[i, j])
-                thisY = Y[i, j] + (fatThicknessZ[i, j] * crossY[i, j])
+                thisX = X[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossX[i, j])
+                thisY = Y[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossY[i, j])
                 thisZ = Z[i, j]
 
                 fatPointsX[index] = thisX
@@ -759,25 +650,99 @@ def moreAltFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, deposi
     for i in range(numU):
         for j in range(numV):
             if fatThicknessZ[i, j] > threshold:
-                fatPointsX[index] = X[i, j] + (0.1 * crossX[i, j])
-                fatPointsY[index] = Y[i, j] + (0.1 * crossY[i, j])
+                fatPointsX[index] = X[i, j]
+                fatPointsY[index] = Y[i, j]
                 fatPointsZ[index] = Z[i, j]
 
                 index += 1
 
-
+    # create polydata from points and perform a triangulation on them
     data = np.column_stack((fatPointsX, fatPointsY, fatPointsZ))
     polydata = pv.PolyData(data)
-    pp = polydata.delaunay_3d(alpha=3.5, tol=0.005)
+    pp = polydata.delaunay_3d(alpha=3.0, tol=0.005)
+    # delaunay routine returns an unstructured grid, so convert back to polydata
     surf = pp.extract_surface()
 
     return surf
 
+def fatTriangulation(X, Y, crossX, crossY, fatThicknessZ, threshold):
+
+    fatPoints = []
+
+    scaleFactor = 1 / np.sqrt(2)
+
+    numU, numV = fatThicknessZ.shape
+
+    # loop through each vertical "slice" of the parameterized surface
+    for i in range(numU):
+        # get only the points in this slice that satisfy the threshold condition
+        numFatPoints = 2 * len(fatThicknessZ[fatThicknessZ[i, :] > threshold])
+        fatPointsThisSlice = np.zeros((numFatPoints, 2))
+
+        # loop through each point in the slice and generate a fat point if it is above the threshold thickness value
+        index = 0
+        for j in range(numV):
+            if fatThicknessZ[i, j] > threshold:
+                # generate a fat surface point by traveling along the direction of the normal vector in accordance
+                # with the magnitude of fat thickness at the current parameter location
+                thisX = X[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossX[i, j])
+                thisY = Y[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossY[i, j])
+
+                fatPointsThisSlice[index] = (thisX, thisY)
+
+                index += 1
+
+                # add the surface point at that location as a fat point as well, such that closed contours can be formed
+                # from the fat points
+                fatPointsThisSlice[index] = (X[i, j], Y[i, j])
+
+                index += 1
+
+        # add this slice's fat points to the overall list
+        fatPoints.append(fatPointsThisSlice)
+
+    # perform initial triangulation for first slice
+    thisSlice = fatPoints[0]
+    T1 = mtra.Triangulation(thisSlice[:, 0], thisSlice[:, 1])
+    for k in range(len(fatPoints)):
+
+        # active contour model to split regions?
+        fig = plt.figure()
+        plt.scatter(thisSlice[:, 0], thisSlice[:, 1])
+        plt.show()
+
+        # triAnalyzer = TriAnalyzer(T1)
+        # mask = triAnalyzer.get_flat_tri_mask(0.15, False)
+        #
+        # tri = T1.triangles
+        # liszt = [list(combinations(tri[i], 2)) for i in range(len(tri))]
+        # allEdges = np.asarray(liszt).reshape(-1, 2)
+        # allEdges = np.sort(allEdges, axis=1)
+        #
+        # fig = plt.figure()
+        # for m in allEdges:
+        #     x1, y1 = thisSlice[m[0]]
+        #     x2, y2 = thisSlice[m[1]]
+        #
+        #     dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        #
+        #     if dist < 6:
+        #         plt.plot((x1, x2), (y1, y2))
+        #
+        # plt.show()
+
+        # retrieve fat points for next slice and compute 2D Delaunay triangulation
+        nextSlice = fatPoints[k+1]
+        T2 = mtra.Triangulation(nextSlice[:, 0], nextSlice[:, 1])
+
+        # update current slice variables before iterating
+        thisSlice = nextSlice
+        T1 = T2
 
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
 def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV, degree, numPointsPerContour,
-                      numSlices, fix_samples=False):
+                      numSlices, fix_samples=False, progressBar=None):
     numCalcControlPointsU = numControlPointsU + degree
     m = numControlPointsU - 1
     n = numControlPointsV - 1
@@ -862,7 +827,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     Vy = newVy
     Vz = newVz
 
-    # ensure that parameterization has a fixed size (100x100)
+    # generate a larger parameterization array before evaluating the tensor product
     if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
@@ -875,166 +840,11 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
 
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
-    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=progressBar)
     stopTime = time.perf_counter()
-    print(f"Tensor product evaluation took {stopTime-startTime} seconds")
+    print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
     return X, Y, Z, Vx, Vy, Vz, U, V, tri
-
-# generates a clamped, 3D spline surface
-def fitSplineOpen3D(X, Y, Z, numSlices, numPointsEachContour, fix_samples=False):
-    # resample the data so each slice has the same number of points
-    # do this by fitting each slice with B-spline curve
-
-    # TODO define this to reflect the number of fat points in each slice of a given deposit
-    resampleNumControlPoints = 4
-    degree = 3
-    resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-        reSampleAndSmoothPointsOpen(X, Y, Z, numPointsEachContour, resampleNumControlPoints, degree)
-
-    # set up parameters for spline fit
-    numControlPointsU = 3
-    numControlPointsV = 3
-    degree = 3
-    m = numControlPointsU - 1
-    n = numControlPointsV - 1
-    numCalcControlPointsU = numControlPointsU + degree
-    numCalcControlPointsV = numControlPointsV + degree
-
-    # generate the knots (numKnots = n + 2d + 2)
-    numKnotsU = m + (2*degree) + 2
-    tauU = np.zeros(numKnotsU)
-    numOpenKnotsU = numKnotsU - (2*degree)
-    tauU[degree:-degree] = np.linspace(0, 1, numOpenKnotsU)
-    tauU[-degree:] = 1
-
-    numKnotsV = n + 2 * degree + 2
-    tauV = np.zeros(numKnotsV)
-    numOpenKnotsV = numKnotsV - (2*degree)
-    tauV[degree:-degree] = np.linspace(0, 1, numOpenKnotsV)
-    tauV[-degree:] = 1
-
-    # set up parameterization
-    U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ, tauU, tauV, degree)
-
-    # now we need to set up matrices to solve for mesh of control points
-    # (B*V*T^T = P)
-
-    B = np.zeros((numPointsPerContour, numCalcControlPointsU))
-    for r in range(numPointsPerContour):
-        for i in range(numCalcControlPointsU):
-            uVal = U[0, r]
-            B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
-
-    # set up C matrix
-    C = np.zeros((numSlices, numCalcControlPointsV))
-    for s in range(numSlices):
-        for j in range(numCalcControlPointsV):
-            vVal = V[s, 0]
-            C[s, j] = NVal(tauV, vVal, j-1, degree, 0)
-
-    # now set up Px, Py, and Pz matrices
-    Px = np.transpose(resampX)
-    Py = np.transpose(resampY)
-    Pz = np.transpose(resampZ)
-
-    # calculate pseudo-inverses of B and C for use in generating control points
-    pinvB = np.linalg.pinv(B)
-    pinvC = np.linalg.pinv(np.transpose(C))
-
-    # solve for control points
-    Vx = np.matmul(pinvB, Px)
-    Vx = np.transpose(np.matmul(Vx, pinvC))
-
-    Vy = np.matmul(pinvB, Py)
-    Vy = np.transpose(np.matmul(Vy, pinvC))
-
-    Vz = np.matmul(pinvB, Pz)
-    Vz = np.transpose(np.matmul(Vz, pinvC))
-
-    # generate larger parameterization array if upsampling option is selected
-    if fix_samples:
-        uMin = np.min(U)
-        uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, 100)
-        vVect = np.linspace(0, 1, 100)
-        U, V = np.meshgrid(uVect, vVect)
-
-    tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
-
-    # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
-    startTime = time.perf_counter()
-    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
-    stopTime = time.perf_counter()
-    print(f"Tensor product evaluation took {stopTime-startTime} seconds")
-
-    return X, Y, Z, tri
-
-def generateFatDepositSplines(X, Y, Z, fatSurfaceX, fatSurfaceY, fatSurfaceZ, deposits, numDeposits):
-    # loop through each deposit and generate a spline surface for that deposit if it is sufficiently large
-    # TODO figure out how to handle very small deposits/deposits that appear on only one slice
-    fatDepositsX = []
-    fatDepositsY = []
-    fatDepositsZ = []
-    fatDepositTriangles = []
-    for i in range(1, numDeposits + 1):
-        # copy fat surface points into array
-        currentDepositX = np.copy(fatSurfaceX)
-        currentDepositY = np.copy(fatSurfaceY)
-        currentDepositZ = np.copy(fatSurfaceZ)
-
-
-        # remove points not corresponding with the current deposit from both sets of arrays
-        currentDepositX[deposits != i] = 0
-        currentDepositY[deposits != i] = 0
-
-        # get number of nonzero points in each slice
-        numPointsEachContour = (currentDepositX != 0).sum(1)
-
-        # trim fat deposit array down to only include slices with nonzero thickness values
-        currentDepositX = currentDepositX[numPointsEachContour != 0, :]
-        currentDepositY = currentDepositY[numPointsEachContour != 0, :]
-        currentDepositZ = currentDepositZ[numPointsEachContour != 0, :]
-
-        numSlicesNonZero = np.count_nonzero(numPointsEachContour)
-
-        firstMyoX = np.zeros((numSlicesNonZero, 1))
-        firstMyoY = np.zeros((numSlicesNonZero, 1))
-        lastMyoX = np.zeros((numSlicesNonZero, 1))
-        lastMyoY = np.zeros((numSlicesNonZero, 1))
-        for k in range(numSlicesNonZero):
-            xFirst = np.argwhere(currentDepositX[k] > 0)[0, 0]
-            yFirst = np.argwhere(currentDepositY[k] > 0)[0, 0]
-
-            firstMyoX[k] = X[k, xFirst]
-            firstMyoY[k] = Y[k, yFirst]
-
-            xLast = np.argwhere(currentDepositX[k] > 0)[-1, 0]
-            yLast = np.argwhere(currentDepositY[k] > 0)[-1, 0]
-
-            lastMyoX[k] = X[k, xLast]
-            lastMyoY[k] = Y[k, yLast]
-
-        currentDepositX = np.concatenate((firstMyoX, currentDepositX, lastMyoX), axis=1)
-        currentDepositY = np.concatenate((firstMyoY, currentDepositY, lastMyoY), axis=1)
-
-        depositPointsEachContour = numPointsEachContour[numPointsEachContour > 0] + 2
-
-        # only generate a spline surface if multiple slices have points for that deposit. Otherwise won't work
-        if numSlicesNonZero > 1:
-
-            # generate spline surface for the current fat deposit
-            depositSplineX, depositSplineY, depositSplineZ, tri = fitSplineOpen3D(currentDepositX, currentDepositY,
-                                                                                  currentDepositZ, numSlicesNonZero,
-                                                                                  depositPointsEachContour,
-                                                                                  fix_sample=False)
-
-            fatDepositsX.append(depositSplineX)
-            fatDepositsY.append(depositSplineY)
-            fatDepositsZ.append(depositSplineZ)
-            fatDepositTriangles.append(tri)
-
-    return fatDepositsX, fatDepositsY, fatDepositsZ, fatDepositTriangles
 
 # creates a VTK file containing the data for a given element of the B-spline curve
 def createVTKModel(X, Y, Z, triangles, filePath):
@@ -1055,12 +865,11 @@ def createVTKModel(X, Y, Z, triangles, filePath):
     surf = pv.PolyData(verts, faces)
     surf.save(filePath, binary=False)
 
-
-def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_samples=False):
+def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_samples=False, progressBar=None):
 
     # set up parameters for spline fit
-    numControlPointsU = 5
-    numControlPointsV = 5
+    numControlPointsU = 4
+    numControlPointsV = 4
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     numCalcControlPointsU = numControlPointsU + degree
@@ -1121,7 +930,7 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_sa
     Vz = np.matmul(pinvB, Pz)
     Vz = np.transpose(np.matmul(Vz, pinvC))
 
-    # ensure that parameterization has fixed values (100x100)
+    # fix parameterization sample numbers to 100x100
     if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
@@ -1133,7 +942,7 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_sa
 
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
-    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V)
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=progressBar)
     stopTime = time.perf_counter()
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
