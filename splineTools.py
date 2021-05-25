@@ -1,14 +1,12 @@
 import numpy as np
-from scipy.spatial.distance import euclidean
+from scipy.ndimage.measurements import label
 from matplotlib.tri import triangulation as mtra
 from matplotlib.tri import TriAnalyzer
 import matplotlib.pyplot as plt
 import pyvista as pv
-
-from skimage import measure
-from skimage import segmentation
-from itertools import combinations
+from PIL import Image
 import time
+from scipy.spatial import Voronoi
 
 # this function performs a polar reordering of points
 def reOrder(points):
@@ -665,79 +663,57 @@ def generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, thres
 
     return surf
 
-def fatTriangulation(X, Y, crossX, crossY, fatThicknessZ, threshold):
-
-    fatPoints = []
+def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     scaleFactor = 1 / np.sqrt(2)
 
     numU, numV = fatThicknessZ.shape
 
+    # apply threshold to
+    fatThicknessZ[fatThicknessZ < threshold] = 0
+
+    # allocate image to hold resulting contour data for each slice
+    image = np.zeros((numU, 150, 130))
+
     # loop through each vertical "slice" of the parameterized surface
     for i in range(numU):
-        # get only the points in this slice that satisfy the threshold condition
-        numFatPoints = 2 * len(fatThicknessZ[fatThicknessZ[i, :] > threshold])
-        fatPointsThisSlice = np.zeros((numFatPoints, 2))
+        # determine which fat points belong to separate "deposits" by finding regions separated by
+        thisSlice = fatThicknessZ[i]
+        labelled, _ = label(thisSlice)
+        indices = [np.nonzero(labelled == k) for k in np.unique(labelled)[1:]]
 
-        # loop through each point in the slice and generate a fat point if it is above the threshold thickness value
-        index = 0
-        for j in range(numV):
-            if fatThicknessZ[i, j] > threshold:
-                # generate a fat surface point by traveling along the direction of the normal vector in accordance
-                # with the magnitude of fat thickness at the current parameter location
-                thisX = X[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossX[i, j])
-                thisY = Y[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossY[i, j])
+        #fatRegions = []
+        for region in indices:
+            region = np.asarray(region)
+            lenRegion = region.shape[1]
+            fatPointsThisRegion = np.zeros((2 * lenRegion, 2))
 
-                fatPointsThisSlice[index] = (thisX, thisY)
+            # generate a fat surface point by traveling along the direction of the normal vector in accordance
+            # with the magnitude of fat thickness at the current parameter location
+            thisX = X[i, region] + (scaleFactor * thisSlice[region] * crossX[i, region])
+            thisY = Y[i, region] + (scaleFactor * thisSlice[region] * crossY[i, region])
 
-                index += 1
+            # add fat points to list
+            fatPointsThisRegion[0:lenRegion] = np.column_stack((np.squeeze(thisX), np.squeeze(thisY)))
 
-                # add the surface point at that location as a fat point as well, such that closed contours can be formed
-                # from the fat points
-                fatPointsThisSlice[index] = (X[i, j], Y[i, j])
+            # flip region index array such that points are added to overall array in "contour order"
+            region = np.fliplr(region)
 
-                index += 1
+            # add surface points corresponding with fat points to array, such that a closed contour can be generated
+            # from the surface points
+            fatPointsThisRegion[lenRegion:] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
 
-        # add this slice's fat points to the overall list
-        fatPoints.append(fatPointsThisSlice)
+            fatPointsThisRegion = np.uint8(fatPointsThisRegion)
+            image[i, fatPointsThisRegion[:, 0], fatPointsThisRegion[:, 1]] = 255
 
-    # perform initial triangulation for first slice
-    thisSlice = fatPoints[0]
-    T1 = mtra.Triangulation(thisSlice[:, 0], thisSlice[:, 1])
-    for k in range(len(fatPoints)):
+            # append the points from this region to the overall list
+            #fatRegions.append(fatPointsThisRegion)
 
-        # active contour model to split regions?
-        fig = plt.figure()
-        plt.scatter(thisSlice[:, 0], thisSlice[:, 1])
-        plt.show()
+            #v = Voronoi(fatPointsThisRegion)
 
-        # triAnalyzer = TriAnalyzer(T1)
-        # mask = triAnalyzer.get_flat_tri_mask(0.15, False)
-        #
-        # tri = T1.triangles
-        # liszt = [list(combinations(tri[i], 2)) for i in range(len(tri))]
-        # allEdges = np.asarray(liszt).reshape(-1, 2)
-        # allEdges = np.sort(allEdges, axis=1)
-        #
-        # fig = plt.figure()
-        # for m in allEdges:
-        #     x1, y1 = thisSlice[m[0]]
-        #     x2, y2 = thisSlice[m[1]]
-        #
-        #     dist = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-        #
-        #     if dist < 6:
-        #         plt.plot((x1, x2), (y1, y2))
-        #
-        # plt.show()
+    print('hi')
 
-        # retrieve fat points for next slice and compute 2D Delaunay triangulation
-        nextSlice = fatPoints[k+1]
-        T2 = mtra.Triangulation(nextSlice[:, 0], nextSlice[:, 1])
 
-        # update current slice variables before iterating
-        thisSlice = nextSlice
-        T1 = T2
 
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart

@@ -330,7 +330,7 @@ mZ *= scaleFactor
 # plt.title('Fat Mountain Plot. Degree: {}'.format(degree))
 # plt.show()
 
-splineTools.fatTriangulation(X, Y, crossX, crossY, mZ, 1.5)
+splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1.5)
 
 # generate fat surface points
 fatPolyData = splineTools.generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, mZ, 1.5)
