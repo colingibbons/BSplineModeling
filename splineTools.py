@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import pyvista as pv
 from PIL import Image
 import time
-from scipy.spatial import Voronoi
+from scipy.spatial import Delaunay, delaunay_plot_2d, Voronoi, voronoi_plot_2d
 
 # this function performs a polar reordering of points
 def reOrder(points):
@@ -674,7 +674,9 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     # allocate image to hold resulting contour data for each slice
     image = np.zeros((numU, 150, 130))
-
+    sp = pv.PolyData()
+    fatRegions = []
+    numRegionsPerSlice = np.zeros(numU)
     # loop through each vertical "slice" of the parameterized surface
     for i in range(numU):
         # determine which fat points belong to separate "deposits" by finding regions separated by
@@ -682,11 +684,11 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         labelled, _ = label(thisSlice)
         indices = [np.nonzero(labelled == k) for k in np.unique(labelled)[1:]]
 
-        #fatRegions = []
+        numRegionsPerSlice[i] = len(indices)
         for region in indices:
             region = np.asarray(region)
             lenRegion = region.shape[1]
-            fatPointsThisRegion = np.zeros((2 * lenRegion, 2))
+            fatPointsThisRegion = np.zeros((2 * lenRegion + 1, 2))
 
             # generate a fat surface point by traveling along the direction of the normal vector in accordance
             # with the magnitude of fat thickness at the current parameter location
@@ -701,17 +703,56 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
             # add surface points corresponding with fat points to array, such that a closed contour can be generated
             # from the surface points
-            fatPointsThisRegion[lenRegion:] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
+            fatPointsThisRegion[lenRegion:-1] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
 
             fatPointsThisRegion = np.uint8(fatPointsThisRegion)
             image[i, fatPointsThisRegion[:, 0], fatPointsThisRegion[:, 1]] = 255
 
+            # add z-axis coordinates to fat point array
+            zz = np.zeros((2 * lenRegion + 1, 1))
+            zz.fill(Z[i, 0])
+            fatPointsThisRegion[-1, :] = fatPointsThisRegion[0, :]
+
             # append the points from this region to the overall list
-            #fatRegions.append(fatPointsThisRegion)
+            fatRegions.append(fatPointsThisRegion)
 
-            #v = Voronoi(fatPointsThisRegion)
+            fatPointsThisRegion = np.concatenate((fatPointsThisRegion, zz), axis=1)
 
-    print('hi')
+            spline = pv.Spline(fatPointsThisRegion, 100)
+            sp = sp + spline
+
+
+    threeDPoints = np.concatenate(fatRegions)
+
+    index = 0
+    num = int(numRegionsPerSlice[0])
+    thisSlice = fatRegions[0:num]
+    for i in range(1, numU - 1):
+        num = int(numRegionsPerSlice[i])
+        index += num
+
+        nextSlice = fatRegions[index:index+num]
+
+        # create Delaunay traingulations for each relevant contour
+        DT1 = Delaunay(thisSlice[0])
+        DT2 = Delaunay(nextSlice[0])
+
+        # create Voronoi diagrams for each contour
+        V1 = Voronoi(thisSlice[0])
+        V2 = Voronoi(nextSlice[0])
+
+        for tri in DT1.simplices:
+            pass
+
+        fig = voronoi_plot_2d(V1)
+        plt.show()
+        fig = voronoi_plot_2d(V2)
+        plt.show()
+
+        print('hi')
+
+
+
 
 
 
