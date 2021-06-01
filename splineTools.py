@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import pyvista as pv
 from PIL import Image
 import time
-from scipy.spatial import Delaunay, delaunay_plot_2d, Voronoi, voronoi_plot_2d
+from scipy.spatial import Delaunay, delaunay_plot_2d, Voronoi, voronoi_plot_2d, KDTree
 
 # this function performs a polar reordering of points
 def reOrder(points):
@@ -669,13 +669,13 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     numU, numV = fatThicknessZ.shape
 
-    # apply threshold to
+    # apply threshold
     fatThicknessZ[fatThicknessZ < threshold] = 0
 
+    fatSlices = []
+
     # allocate image to hold resulting contour data for each slice
-    image = np.zeros((numU, 150, 130))
     sp = pv.PolyData()
-    fatRegions = []
     numRegionsPerSlice = np.zeros(numU)
     # loop through each vertical "slice" of the parameterized surface
     for i in range(numU):
@@ -684,7 +684,9 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         labelled, _ = label(thisSlice)
         indices = [np.nonzero(labelled == k) for k in np.unique(labelled)[1:]]
 
-        numRegionsPerSlice[i] = len(indices)
+        # hold the region data from this slice in a list
+        fatRegions = []
+
         for region in indices:
             region = np.asarray(region)
             lenRegion = region.shape[1]
@@ -705,9 +707,6 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             # from the surface points
             fatPointsThisRegion[lenRegion:-1] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
 
-            fatPointsThisRegion = np.uint8(fatPointsThisRegion)
-            image[i, fatPointsThisRegion[:, 0], fatPointsThisRegion[:, 1]] = 255
-
             # add z-axis coordinates to fat point array
             zz = np.zeros((2 * lenRegion + 1, 1))
             zz.fill(Z[i, 0])
@@ -721,33 +720,46 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             spline = pv.Spline(fatPointsThisRegion, 100)
             sp = sp + spline
 
+        # collapse fat regions into single point array and append
+        # TODO there are a few slices for which no fat points are defined erroneously. should figure out why
+        if len(fatRegions) > 0:
+            fatRegions = np.concatenate(fatRegions)
+            fatSlices.append(fatRegions)
 
-    threeDPoints = np.concatenate(fatRegions)
+    # create Delaunay and Voronoi diagrams for the first slice
+    P1 = fatSlices[0]
+    DT1 = Delaunay(P1)
+    V1 = Voronoi(P1)
+    for i in range(1, numU):
 
-    index = 0
-    num = int(numRegionsPerSlice[0])
-    thisSlice = fatRegions[0:num]
-    for i in range(1, numU - 1):
-        num = int(numRegionsPerSlice[i])
-        index += num
+        # get points for next slice
+        P2 = fatSlices[i]
 
-        nextSlice = fatRegions[index:index+num]
-
-        # create Delaunay traingulations for each relevant contour
-        DT1 = Delaunay(thisSlice[0])
-        DT2 = Delaunay(nextSlice[0])
+        # create Delaunay triangulation for this slice
+        DT2 = Delaunay(P2)
 
         # create Voronoi diagrams for each contour
-        V1 = Voronoi(thisSlice[0])
-        V2 = Voronoi(nextSlice[0])
+        V2 = Voronoi(P2)
 
-        for tri in DT1.simplices:
-            pass
+        # create a KDTree to efficiently compare each point in the next slice to the current one
+        tree = KDTree(P1)
+        locs, ids = tree.query(P2)
 
-        fig = voronoi_plot_2d(V1)
+        # superimpose the voronoi diagrams of successive slices
+        fig, ax = plt.subplots()
+        delaunay_plot_2d(DT1, ax=ax)
+        voronoi_plot_2d(V1, ax=ax)
+        ax.scatter(P2[:, 0], P2[:, 1], s=20,  color='r')
+
+        for j in range(len(P2)):
+            ax.annotate(ids[j], (P2[j, 0], P2[j, 1]), size=10)
+
         plt.show()
-        fig = voronoi_plot_2d(V2)
-        plt.show()
+
+        # update "current slice" variables with "next slice" values
+        P1 = P2
+        DT1 = DT2
+        V1 = V2
 
         print('hi')
 
