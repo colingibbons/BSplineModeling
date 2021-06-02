@@ -726,42 +726,74 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             fatRegions = np.concatenate(fatRegions)
             fatSlices.append(fatRegions)
 
-    # create Delaunay and Voronoi diagrams for the first slice
-    P1 = fatSlices[0]
-    DT1 = Delaunay(P1)
-    V1 = Voronoi(P1)
-    for i in range(1, numU):
+    DTList = []
+    VoronoiList = []
+    treeList = []
+    # precompute DT and Voronoi for each slice
+    for i in range(len(fatSlices)):
 
-        # get points for next slice
-        P2 = fatSlices[i]
+        # compute geometric objects for this slice
+        DT = Delaunay(fatSlices[i])
+        V = Voronoi(fatSlices[i])
+        tree = KDTree(fatSlices[i])
 
-        # create Delaunay triangulation for this slice
-        DT2 = Delaunay(P2)
+        DTList.append(DT)
+        VoronoiList.append(V)
+        treeList.append(tree)
 
-        # create Voronoi diagrams for each contour
-        V2 = Voronoi(P2)
+    lines = []
+    index = 0
 
-        # create a KDTree to efficiently compare each point in the next slice to the current one
-        tree = KDTree(P1)
-        locs, ids = tree.query(P2)
+    threeDPoints = np.concatenate(fatSlices)
+    for j in range(len(fatSlices) - 1):
 
-        # superimpose the voronoi diagrams of successive slices
-        fig, ax = plt.subplots()
-        delaunay_plot_2d(DT1, ax=ax)
-        voronoi_plot_2d(V1, ax=ax)
-        ax.scatter(P2[:, 0], P2[:, 1], s=20,  color='r')
+        thisLines = np.zeros((len(fatSlices[j]), 2))
+        thisLines[:, 0] = np.arange(index, index+len(fatSlices[j]), 1)
 
-        for j in range(len(P2)):
-            ax.annotate(ids[j], (P2[j, 0], P2[j, 1]), size=10)
+        # update index such that line connectivity can be accurately correlated with
+        index += len(fatSlices[j])
 
-        plt.show()
+        # query voronoi vertices of the next slice to determine the connectivity between slices
+        _, ids = treeList[j+1].query(fatSlices[j])
 
-        # update "current slice" variables with "next slice" values
-        P1 = P2
-        DT1 = DT2
-        V1 = V2
+        # grab points corresponding to connectivity results from KDTree query
+        nextSlicePoints = fatSlices[j+1][ids, :]
 
-        print('hi')
+        # update ids so that they can be used to address locations in overall point array
+        ids += index
+
+        # add lines from this slice-pair to running total
+        thisLines[:, 1] = ids
+        lines.append(thisLines)
+
+        # add z-axis coordinates to fat point array
+        zz = np.zeros((len(fatSlices[j]), 1))
+        zz.fill(Z[j, 0])
+        fatSlices[j] = np.concatenate((fatSlices[j], zz), axis=1)
+
+    # add z coordinates to last slice
+    zz = np.zeros((len(fatSlices[-1]), 1))
+    zz.fill(Z[-1, 0])
+    fatSlices[-1] = np.concatenate((fatSlices[-1], zz), axis=1)
+
+    # concatenate points and lines from all slices into a single numpy array
+    threeDPoints = np.concatenate(fatSlices)
+
+    # pyvista requires specification of number of points connected by a tuple, so add a column of 2's
+    # ll = np.full((len(lines), 1), 2)
+    # lines = np.concatenate((ll, lines), axis=1)
+
+    poly = pv.PolyData(threeDPoints)
+    p = pv.Plotter()
+    p.add_mesh(poly, point_size=3)
+    for i in range(len(fatSlices)-1):
+        ll = np.ravel(lines[i]).astype(int)
+        p.add_lines(threeDPoints[ll], color='red')
+
+    p.show()
+
+    return poly
+
 
 
 
