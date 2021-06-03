@@ -672,20 +672,30 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     # apply threshold
     fatThicknessZ[fatThicknessZ < threshold] = 0
 
+    # lists will hold fat data by slice and by region/deposit
     fatSlices = []
+    fatRegions = []
 
     # allocate image to hold resulting contour data for each slice
     sp = pv.PolyData()
     numRegionsPerSlice = np.zeros(numU)
     # loop through each vertical "slice" of the parameterized surface
     for i in range(numU):
+
         # determine which fat points belong to separate "deposits" by finding regions separated by
         thisSlice = fatThicknessZ[i]
-        labelled, _ = label(thisSlice)
-        indices = [np.nonzero(labelled == k) for k in np.unique(labelled)[1:]]
 
-        # hold the region data from this slice in a list
-        fatRegions = []
+        # indices have to be handled differently if entire slice is nonzero elements
+        # TODO find a more graceful and compact way of doing this
+        if np.count_nonzero(thisSlice == 0) == 0:
+            indices = [np.expand_dims(np.arange(1, len(thisSlice), 1))]
+        else:
+            labelled, _ = label(thisSlice)
+            indices = [np.nonzero(labelled == k) for k in np.unique(labelled)[1:]]
+
+        numRegionsPerSlice[i] = len(indices)
+        # hold the region data
+        thisRegion = []
 
         for region in indices:
             region = np.asarray(region)
@@ -713,18 +723,15 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             fatPointsThisRegion[-1, :] = fatPointsThisRegion[0, :]
 
             # append the points from this region to the overall list
+            thisRegion.append(fatPointsThisRegion)
+
             fatRegions.append(fatPointsThisRegion)
-
-            fatPointsThisRegion = np.concatenate((fatPointsThisRegion, zz), axis=1)
-
-            spline = pv.Spline(fatPointsThisRegion, 100)
-            sp = sp + spline
 
         # collapse fat regions into single point array and append
         # TODO there are a few slices for which no fat points are defined erroneously. should figure out why
-        if len(fatRegions) > 0:
-            fatRegions = np.concatenate(fatRegions)
-            fatSlices.append(fatRegions)
+        if len(thisRegion) > 0:
+            thisRegion = np.concatenate(thisRegion)
+            fatSlices.append(thisRegion)
 
     DTList = []
     VoronoiList = []
@@ -742,52 +749,49 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         treeList.append(tree)
 
     lines = []
-    index = 0
+    pointIndex = 0
+    treeIndex = 0
+    count = 0
+    thisTree = treeList[1]
+    numRegionsPerSlice = numRegionsPerSlice[numRegionsPerSlice != 0]
+    for j in range(len(fatRegions)):
 
-    threeDPoints = np.concatenate(fatSlices)
-    for j in range(len(fatSlices) - 1):
+        if count >= numRegionsPerSlice[treeIndex]:
+            treeIndex += 1
+            thisTree = treeList[treeIndex]
+            count = 1
 
-        thisLines = np.zeros((len(fatSlices[j]), 2))
-        thisLines[:, 0] = np.arange(index, index+len(fatSlices[j]), 1)
+        thisLines = np.zeros((len(fatRegions[j]), 2))
+        thisLines[:, 0] = np.arange(pointIndex, pointIndex+len(fatRegions[j]), 1)
 
         # update index such that line connectivity can be accurately correlated with
-        index += len(fatSlices[j])
+        pointIndex += len(fatRegions[j])
 
         # query voronoi vertices of the next slice to determine the connectivity between slices
-        _, ids = treeList[j+1].query(fatSlices[j])
-
-        # grab points corresponding to connectivity results from KDTree query
-        nextSlicePoints = fatSlices[j+1][ids, :]
+        _, ids = thisTree.query(fatRegions[j])
 
         # update ids so that they can be used to address locations in overall point array
-        ids += index
+        ids += pointIndex
 
         # add lines from this slice-pair to running total
         thisLines[:, 1] = ids
         lines.append(thisLines)
 
         # add z-axis coordinates to fat point array
-        zz = np.zeros((len(fatSlices[j]), 1))
-        zz.fill(Z[j, 0])
-        fatSlices[j] = np.concatenate((fatSlices[j], zz), axis=1)
+        zz = np.zeros((len(fatRegions[j]), 1))
+        zz.fill(Z[treeIndex, 0])
+        fatRegions[j] = np.concatenate((fatRegions[j], zz), axis=1)
 
-    # add z coordinates to last slice
-    zz = np.zeros((len(fatSlices[-1]), 1))
-    zz.fill(Z[-1, 0])
-    fatSlices[-1] = np.concatenate((fatSlices[-1], zz), axis=1)
+        count += 1
 
     # concatenate points and lines from all slices into a single numpy array
-    threeDPoints = np.concatenate(fatSlices)
-
-    # pyvista requires specification of number of points connected by a tuple, so add a column of 2's
-    # ll = np.full((len(lines), 1), 2)
-    # lines = np.concatenate((ll, lines), axis=1)
+    threeDPoints = np.concatenate(fatRegions)
 
     poly = pv.PolyData(threeDPoints)
     p = pv.Plotter()
     p.add_mesh(poly, point_size=3)
-    for i in range(len(fatSlices)-1):
-        ll = np.ravel(lines[i]).astype(int)
+    for ll in lines:
+        ll = np.ravel(ll).astype(int)
         p.add_lines(threeDPoints[ll], color='red')
 
     p.show()
