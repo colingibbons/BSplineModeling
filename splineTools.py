@@ -665,8 +665,10 @@ def generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, thres
 
 def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
+    # define the scale factor that will determine where fat-points are located in 3D space
     scaleFactor = 1 / np.sqrt(2)
 
+    # get the shape of the input parameterization
     numU, numV = fatThicknessZ.shape
 
     # apply threshold
@@ -677,29 +679,42 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     fatRegions = []
 
     # allocate image to hold resulting contour data for each slice
-    sp = pv.PolyData()
     numRegionsPerSlice = np.zeros(numU)
+
     # loop through each vertical "slice" of the parameterized surface
     for i in range(numU):
 
         # determine which fat points belong to separate "deposits" by finding regions separated by
         thisSlice = fatThicknessZ[i]
 
-        # indices have to be handled differently if entire slice is nonzero elements
-        # TODO find a more graceful and compact way of doing this
-        if np.count_nonzero(thisSlice == 0) == 0:
-            indices = [np.expand_dims(np.arange(1, len(thisSlice), 1))]
-        else:
-            labelled, _ = label(thisSlice)
-            indices = [np.nonzero(labelled == k) for k in np.unique(labelled)[1:]]
+        beginLength = None
 
+        # indices have to be handled differently if entire slice is nonzero elements
+        if np.count_nonzero(thisSlice == 0) == 0:
+            indices = [np.arange(0, len(thisSlice), 1)]
+        else:
+            # label regions based on connectivity such that separate fat deposits may be handled separately
+            labelled, _ = label(thisSlice)
+            # if deposits are identified at start and end of label array, combine them into a single deposit. Since the
+            # parameterization "wraps around" the surface of the heart, regions on either end of the array are actually
+            # connected when viewed in 3D space
+            # if labelled[0] != 0 and labelled[-1] != 0:
+            #     beginLength = np.count_nonzero(labelled == labelled[0])
+            #     labelled[labelled == labelled[-1]] = labelled[0]
+            indices = [np.asarray(np.nonzero(labelled == k)) for k in np.unique(labelled)[1:]]
+            #
+            # # flip array indices
+            # if beginLength:
+            #     flipped = np.fliplr(indices[0][:, 0:beginLength])
+            #     indices[0][:, 0:beginLength] = flipped
+
+        # make note of number of regions in each slice
         numRegionsPerSlice[i] = len(indices)
         # hold the region data
         thisRegion = []
 
         for region in indices:
-            region = np.asarray(region)
-            lenRegion = region.shape[1]
+            lenRegion = max(region.shape)
             fatPointsThisRegion = np.zeros((2 * lenRegion + 1, 2))
 
             # generate a fat surface point by traveling along the direction of the normal vector in accordance
@@ -711,16 +726,19 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             fatPointsThisRegion[0:lenRegion] = np.column_stack((np.squeeze(thisX), np.squeeze(thisY)))
 
             # flip region index array such that points are added to overall array in "contour order"
-            region = np.fliplr(region)
+            if numRegionsPerSlice[i] > 1:
+                region = np.fliplr(region)
 
             # add surface points corresponding with fat points to array, such that a closed contour can be generated
             # from the surface points
             fatPointsThisRegion[lenRegion:-1] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
 
-            # add z-axis coordinates to fat point array
-            zz = np.zeros((2 * lenRegion + 1, 1))
-            zz.fill(Z[i, 0])
+            # duplicate first point for closed contour
             fatPointsThisRegion[-1, :] = fatPointsThisRegion[0, :]
+
+            # add z-axis coordinates to fat point array
+            zz = np.full((2 * lenRegion + 1, 1), Z[i, 0])
+            fatPointsThisRegion = np.concatenate((fatPointsThisRegion, zz), axis=1)
 
             # append the points from this region to the overall list
             thisRegion.append(fatPointsThisRegion)
@@ -728,73 +746,124 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             fatRegions.append(fatPointsThisRegion)
 
         # collapse fat regions into single point array and append
-        # TODO there are a few slices for which no fat points are defined erroneously. should figure out why
         if len(thisRegion) > 0:
             thisRegion = np.concatenate(thisRegion)
             fatSlices.append(thisRegion)
 
-    DTList = []
-    VoronoiList = []
-    treeList = []
-    # precompute DT and Voronoi for each slice
-    for i in range(len(fatSlices)):
-
-        # compute geometric objects for this slice
-        DT = Delaunay(fatSlices[i])
-        V = Voronoi(fatSlices[i])
-        tree = KDTree(fatSlices[i])
-
-        DTList.append(DT)
-        VoronoiList.append(V)
-        treeList.append(tree)
-
-    lines = []
-    pointIndex = 0
-    treeIndex = 0
-    count = 0
-    thisTree = treeList[1]
-    numRegionsPerSlice = numRegionsPerSlice[numRegionsPerSlice != 0]
-    for j in range(len(fatRegions)):
-
-        if count >= numRegionsPerSlice[treeIndex]:
-            treeIndex += 1
-            thisTree = treeList[treeIndex]
-            count = 1
-
-        thisLines = np.zeros((len(fatRegions[j]), 2))
-        thisLines[:, 0] = np.arange(pointIndex, pointIndex+len(fatRegions[j]), 1)
-
-        # update index such that line connectivity can be accurately correlated with
-        pointIndex += len(fatRegions[j])
-
-        # query voronoi vertices of the next slice to determine the connectivity between slices
-        _, ids = thisTree.query(fatRegions[j])
-
-        # update ids so that they can be used to address locations in overall point array
-        ids += pointIndex
-
-        # add lines from this slice-pair to running total
-        thisLines[:, 1] = ids
-        lines.append(thisLines)
-
-        # add z-axis coordinates to fat point array
-        zz = np.zeros((len(fatRegions[j]), 1))
-        zz.fill(Z[treeIndex, 0])
-        fatRegions[j] = np.concatenate((fatRegions[j], zz), axis=1)
-
-        count += 1
-
     # concatenate points and lines from all slices into a single numpy array
     threeDPoints = np.concatenate(fatRegions)
 
-    poly = pv.PolyData(threeDPoints)
-    p = pv.Plotter()
-    p.add_mesh(poly, point_size=3)
-    for ll in lines:
-        ll = np.ravel(ll).astype(int)
-        p.add_lines(threeDPoints[ll], color='red')
+    # loop through each fat slice
+    lines = []
+    linesAround = []
+    depositIndex = 0
+    pointIndex = 0
+    nextSliceIndex = 0
+    for j in range(len(fatSlices) - 1):
 
-    p.show()
+        # get number of points in this slice
+        thisSliceLen = len(fatSlices[j])
+        thisTree = KDTree(fatSlices[j+1][:, 0:2])
+        # update next slice index so that lines connect properly to the next slice up
+        nextSliceIndex += thisSliceLen
+
+        # perform the KDTree query for each individual deposit
+        for k in range(int(numRegionsPerSlice[j])):
+
+            # grab this specific fat deposit from the region list
+            thisFatDeposit = fatRegions[depositIndex + k]
+
+            # define lines array
+            thisLines = np.zeros((len(thisFatDeposit), 2))
+            thisLines[:, 0] = np.arange(pointIndex, pointIndex+len(thisFatDeposit), 1)
+
+            # define contour lines array
+            thisLinesAround = np.zeros((len(thisFatDeposit), 2))
+            thisLinesAround[:, 0] = np.arange(pointIndex, pointIndex+len(thisFatDeposit), 1)
+            thisLinesAround[:, 1] = np.roll(thisLinesAround[:, 0], -1)
+            linesAround.append(thisLinesAround)
+
+            # perform KDTree query for this fat deposit
+            _, ids = thisTree.query(thisFatDeposit[:, 0:2])
+
+            # add point index to line ids so that they connect to points on the correct slice
+            ids += nextSliceIndex
+
+            # finish defining line connectivity and append lines from this deposit to the overall list
+            thisLines[:, 1] = ids
+            lines.append(thisLines)
+
+            # update point index
+            pointIndex += len(thisFatDeposit)
+
+        # update indices before moving on to next slice
+        depositIndex += int(numRegionsPerSlice[j])
+
+    # restructure array such that diagonal lines are explicitly defined. This is accomplished by taking each consecutive
+    # pair of point indices and storing them as a row in a new array
+    # TODO do this without more_itertools
+    from more_itertools import pairwise
+    newLines = []
+    for l in lines:
+        l = np.ravel(l)
+        new = np.asarray(list(pairwise(l)))
+
+        # remove redundant lines from output
+        new =  np.sort(new, axis=1)
+        _, indices = np.unique(new, return_index=True, axis=0)
+        new = new[np.sort(indices)]
+        newLines.append(new)
+
+    flatLines = np.concatenate(newLines)
+    flatLinesAround = np.concatenate(linesAround)
+    allLines = np.concatenate((flatLines, flatLinesAround), axis=0)
+
+    poly = pv.PolyData(threeDPoints)
+    pl = pv.Plotter()
+    pl.add_mesh(poly, color='white', point_size=10)
+    # for i in range(len(linesAround)):
+    #
+    #     ll = np.ravel(linesAround[i]).astype(int)
+    #     rr = np.ravel(lines[i]).astype(int)
+    #     p.show(interactive_update=True)
+    #     p.add_lines(threeDPoints[ll], color='red')
+    #     p.add_lines(threeDPoints[rr], color='blue')
+
+    # loop through the list of vertices and establish a connectivity list for each
+    connectedVertices = []
+    for k in range(len(threeDPoints)):
+        lX, lY = np.where(allLines == k)
+        lY = lY ^ 1
+
+        # get indices of vertices to which the current vertex is connected by a known line
+        cV = allLines[lX, lY].astype(int)
+        connectedVertices.append(cV)
+
+    tris = []
+    for m in range(len(threeDPoints)):
+        thisVertex = connectedVertices[m]
+
+        for neighbor in thisVertex:
+            conn = connectedVertices[neighbor]
+            common = np.intersect1d(thisVertex, conn)
+            if len(common) > 0:
+                for match in common:
+                    newTri = [m, neighbor, match]
+                    tris.append(newTri)
+
+    tris = np.asarray(tris)
+    num = np.full((len(tris), 1), 3)
+    tris = np.concatenate((num, tris), axis=1).astype(int)
+
+    poly = pv.PolyData(threeDPoints, tris)
+    # p = pv.Plotter()
+    # p.add_mesh(poly, color='yellow')
+    # for i in range(len(linesAround)):
+    #     ll = np.ravel(linesAround[i]).astype(int)
+    #     rr = np.ravel(lines[i]).astype(int)
+    #     p.add_lines(threeDPoints[ll], color='red')
+    #     p.add_lines(threeDPoints[rr], color='blue')
+    # p.show(interactive_update=True)
 
     return poly
 

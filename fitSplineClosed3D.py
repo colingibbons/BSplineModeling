@@ -4,6 +4,7 @@ from os.path import isdir
 from os import mkdir
 import yaml
 import pyvista as pv
+import time
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -330,12 +331,13 @@ mZ *= scaleFactor
 # plt.title('Fat Mountain Plot. Degree: {}'.format(degree))
 # plt.show()
 
-splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1.5)
+# call the fat triangulation function to create a 3D fat surface from the mountain plot
+start = time.perf_counter()
+fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1.5)
+stop = time.perf_counter()
+print(f'Fat surface generation took {stop-start} seconds')
 
-# generate fat surface points
-fatPolyData = splineTools.generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, mZ, 1.5)
-#fatPolyData = fatPolyData.clean().triangulate().smooth(100)
-fatPolyData = fatPolyData.triangulate().smooth(100).clean()
+# display the fat plot
 p = pv.Plotter()
 p.add_mesh(fatPolyData, color='yellow')
 p.show()
