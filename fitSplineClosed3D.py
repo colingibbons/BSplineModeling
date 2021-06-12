@@ -337,9 +337,11 @@ fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1.5)
 stop = time.perf_counter()
 print(f'Fat surface generation took {stop-start} seconds')
 
+slc = fatPolyData.slice(normal=(1, 0, 1), origin=(50, 50, 50))
 # display the fat plot
 p = pv.Plotter()
-p.add_mesh(fatPolyData, color='yellow')
+#p.add_mesh(fatPolyData, color='yellow')
+p.add_mesh(slc, color='red')
 p.show()
 
 

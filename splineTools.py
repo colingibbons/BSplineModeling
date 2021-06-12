@@ -698,15 +698,21 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             # if deposits are identified at start and end of label array, combine them into a single deposit. Since the
             # parameterization "wraps around" the surface of the heart, regions on either end of the array are actually
             # connected when viewed in 3D space
-            # if labelled[0] != 0 and labelled[-1] != 0:
-            #     beginLength = np.count_nonzero(labelled == labelled[0])
-            #     labelled[labelled == labelled[-1]] = labelled[0]
+            if labelled[0] != 0 and labelled[-1] != 0:
+                beginLength = np.count_nonzero(labelled == labelled[0])
+                labelled[labelled == labelled[-1]] = labelled[0]
+
+            # get indices of fat points belonging to each deposit
             indices = [np.asarray(np.nonzero(labelled == k)) for k in np.unique(labelled)[1:]]
-            #
-            # # flip array indices
-            # if beginLength:
-            #     flipped = np.fliplr(indices[0][:, 0:beginLength])
-            #     indices[0][:, 0:beginLength] = flipped
+
+            # deposits that "wrap around" the array need to be handled differently to ensure proper connectivity
+            # between points on either side of the array
+            if beginLength:
+                for j, dep in enumerate(indices):
+                    # if a deposit has points at indices 0 and 99, it wraps around the array
+                    wrap = (0 in dep) and (99 in dep)
+                    if wrap:
+                        indices[j] = np.roll(dep, -beginLength)
 
         # make note of number of regions in each slice
         numRegionsPerSlice[i] = len(indices)
@@ -726,7 +732,8 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             fatPointsThisRegion[0:lenRegion] = np.column_stack((np.squeeze(thisX), np.squeeze(thisY)))
 
             # flip region index array such that points are added to overall array in "contour order"
-            if numRegionsPerSlice[i] > 1:
+            wrap = (0 in region) and (99 in region)
+            if not wrap and numRegionsPerSlice[i] > 1:
                 region = np.fliplr(region)
 
             # add surface points corresponding with fat points to array, such that a closed contour can be generated
@@ -735,6 +742,12 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
             # duplicate first point for closed contour
             fatPointsThisRegion[-1, :] = fatPointsThisRegion[0, :]
+
+            if beginLength:
+                fig = plt.figure()
+                for points in fatPointsThisRegion:
+                    plt.scatter(points[0], points[1])
+                    plt.show()
 
             # add z-axis coordinates to fat point array
             zz = np.full((2 * lenRegion + 1, 1), Z[i, 0])
@@ -799,6 +812,15 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         # update indices before moving on to next slice
         depositIndex += int(numRegionsPerSlice[j])
 
+    p = pv.Plotter()
+    p.add_mesh(threeDPoints, point_size=10)
+    for i in range(len(linesAround)):
+        ll = np.ravel(linesAround[i]).astype(int)
+        rr = np.ravel(lines[i]).astype(int)
+        p.add_lines(threeDPoints[ll], color='red')
+        p.add_lines(threeDPoints[rr], color='blue')
+    p.show()
+
     # restructure array such that diagonal lines are explicitly defined. This is accomplished by taking each consecutive
     # pair of point indices and storing them as a row in a new array
     # TODO do this without more_itertools
@@ -814,20 +836,10 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         new = new[np.sort(indices)]
         newLines.append(new)
 
+    # concatenate the line lists into a single numpy array containing every line
     flatLines = np.concatenate(newLines)
     flatLinesAround = np.concatenate(linesAround)
     allLines = np.concatenate((flatLines, flatLinesAround), axis=0)
-
-    poly = pv.PolyData(threeDPoints)
-    pl = pv.Plotter()
-    pl.add_mesh(poly, color='white', point_size=10)
-    # for i in range(len(linesAround)):
-    #
-    #     ll = np.ravel(linesAround[i]).astype(int)
-    #     rr = np.ravel(lines[i]).astype(int)
-    #     p.show(interactive_update=True)
-    #     p.add_lines(threeDPoints[ll], color='red')
-    #     p.add_lines(threeDPoints[rr], color='blue')
 
     # loop through the list of vertices and establish a connectivity list for each
     connectedVertices = []
@@ -839,6 +851,9 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         cV = allLines[lX, lY].astype(int)
         connectedVertices.append(cV)
 
+    # generate the triangles that will comprise the output polydata by looping through each vertex and checking the
+    # points to which it is connected. If a vertex is connected to two other vertices and those two vertices are also
+    # connected to one another, the three vertices are saved as a triangle.
     tris = []
     for m in range(len(threeDPoints)):
         thisVertex = connectedVertices[m]
@@ -851,19 +866,21 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
                     newTri = [m, neighbor, match]
                     tris.append(newTri)
 
+    # add a column of 3's to the triangle array because pyvista requires that the number of edges in a face be specified
     tris = np.asarray(tris)
     num = np.full((len(tris), 1), 3)
     tris = np.concatenate((num, tris), axis=1).astype(int)
 
+    # plot the resulting polydata
     poly = pv.PolyData(threeDPoints, tris)
-    # p = pv.Plotter()
-    # p.add_mesh(poly, color='yellow')
+    p = pv.Plotter()
+    p.add_mesh(poly, color='yellow')
     # for i in range(len(linesAround)):
     #     ll = np.ravel(linesAround[i]).astype(int)
     #     rr = np.ravel(lines[i]).astype(int)
     #     p.add_lines(threeDPoints[ll], color='red')
     #     p.add_lines(threeDPoints[rr], color='blue')
-    # p.show(interactive_update=True)
+    p.show(interactive_update=True)
 
     return poly
 
