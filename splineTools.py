@@ -693,14 +693,14 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
         # determine which fat points belong to separate "deposits" by finding regions separated by
         thisSlice = fatThicknessZ[i]
+        thisRegion = []
 
         beginLength = None
 
         if np.count_nonzero(thisSlice == 0) == 0:
             # indices have to be handled differently if entire slice is nonzero elements
             indices = [np.arange(0, len(thisSlice), 1)]
-
-            thisRegion = []
+            numRegionsPerSlice[i] = 2
 
             # for a fully defined slice, we expect the fat intersection to consist of two (roughly) concentric contours
             # as such, define an "inside" and "outside" array
@@ -718,13 +718,16 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
             # outside fat contour is comprised of fat points whose distance from the myocardium is defined by
             # the parameterized fat thickness map
-            fatPointsOutside[:, 0] = X[i, :] + (scaleFactor * thisSlice[i] * crossX[i, :])
-            fatPointsOutside[:, 1] = Y[i, :] + (scaleFactor * thisSlice[i] * crossY[i, :])
+            fatPointsOutside[:, 0] = X[i, :] + (scaleFactor * thisSlice * crossX[i, :])
+            fatPointsOutside[:, 1] = Y[i, :] + (scaleFactor * thisSlice * crossY[i, :])
             fatPointsOutside[:, 2] = Z[i, :]
 
             # append outside to fat arrays
             thisRegion.append(fatPointsOutside)
             fatRegions.append(fatPointsOutside)
+        elif np.all(thisSlice == 0):
+            # skip this slice if the fat thickness is 0 across the entire slice
+            numRegionsPerSlice[i] = 0
         else:
             # label regions based on connectivity such that separate fat deposits may be handled separately
             labelled, _ = label(thisSlice)
@@ -749,8 +752,6 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
             # make note of number of regions in each slice
             numRegionsPerSlice[i] = len(indices)
-            # hold the region data
-            thisRegion = []
 
             for region in indices:
                 lenRegion = max(region.shape)
@@ -797,13 +798,19 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     depositIndex = 0
     pointIndex = 0
     nextSliceIndex = 0
-    for j in range(len(fatSlices) - 1):
+    for j in range(len(fatSlices)):
 
+        # skip this slice index if there are no fat points for the slice
+        if int(numRegionsPerSlice[j]) == 0:
+            continue
         # get number of points in this slice
         thisSliceLen = len(fatSlices[j])
-        thisTree = KDTree(fatSlices[j+1][:, 0:2])
-        # update next slice index so that lines connect properly to the next slice up
-        nextSliceIndex += thisSliceLen
+
+        # update KDTree to reflect points of the next slice - unless the current slice is the uppermost slice
+        if j != len(fatSlices) - 1:
+            thisTree = KDTree(fatSlices[j+1][:, 0:2])
+            # update next slice index so that lines connect properly to the next slice up
+            nextSliceIndex += thisSliceLen
 
         # perform the KDTree query for each individual deposit
         for k in range(int(numRegionsPerSlice[j])):
@@ -811,30 +818,32 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             # grab this specific fat deposit from the region list
             thisFatDeposit = fatRegions[depositIndex + k]
 
-            # define lines array
-            thisLines = np.zeros((len(thisFatDeposit), 2))
-            thisLines[:, 0] = np.arange(pointIndex, pointIndex+len(thisFatDeposit), 1)
-
             # define contour lines array
             thisLinesAround = np.zeros((len(thisFatDeposit), 2))
             thisLinesAround[:, 0] = np.arange(pointIndex, pointIndex+len(thisFatDeposit), 1)
             thisLinesAround[:, 1] = np.roll(thisLinesAround[:, 0], -1)
             linesAround.append(thisLinesAround)
 
-            # perform KDTree query for this fat deposit
-            dists, ids = thisTree.query(thisFatDeposit[:, 0:2])
-            mask = dists < 5
+            # generate lines connecting to next slice up, unless this is region belongs to the topmost slice
+            if j != len(fatSlices) - 1:
+                # define lines array
+                thisLines = np.zeros((len(thisFatDeposit), 2))
+                thisLines[:, 0] = np.arange(pointIndex, pointIndex + len(thisFatDeposit), 1)
 
-            # add point index to line ids so that they connect to points on the correct slice
-            ids += nextSliceIndex
+                # perform KDTree query for this fat deposit
+                dists, ids = thisTree.query(thisFatDeposit[:, 0:2])
+                mask = dists < 5
 
-            # finish defining line connectivity and append lines from this deposit to the overall list
-            thisLines[:, 1] = ids
-            # mask off connections that generate excessively long lines - these connections contribute to the formation
-            # of undesirable triangles in the output
-            thisLines = thisLines[mask, :]
-            # append this region's lines to the overall list of lines
-            lines.append(thisLines)
+                # add point index to line ids so that they connect to points on the correct slice
+                ids += nextSliceIndex
+
+                # finish defining line connectivity and append lines from this deposit to the overall list
+                thisLines[:, 1] = ids
+                # mask off connections that generate excessively long lines - these connections contribute to the
+                # formation of undesirable triangles in the output
+                thisLines = thisLines[mask, :]
+                # append this region's lines to the overall list of lines
+                lines.append(thisLines)
 
             # update point index
             pointIndex += len(thisFatDeposit)
@@ -846,9 +855,11 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     # p.add_mesh(threeDPoints, point_size=10)
     # for i in range(len(linesAround)):
     #     ll = np.ravel(linesAround[i]).astype(int)
-    #     rr = np.ravel(lines[i]).astype(int)
     #     p.add_lines(threeDPoints[ll], color='red')
-    #     p.add_lines(threeDPoints[rr], color='blue')
+    #
+    # for i in range(len(lines)):
+    #     ll = np.ravel(lines[i]).astype(int)
+    #     p.add_lines(threeDPoints[ll], color='blue')
     # p.show()
 
     # restructure array such that diagonal lines are explicitly defined. This is accomplished by taking each consecutive
@@ -857,14 +868,18 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     from more_itertools import pairwise
     newLines = []
     for l in lines:
-        l = np.ravel(l)
-        new = np.asarray(list(pairwise(l)))
 
-        # remove redundant lines from output
-        new =  np.sort(new, axis=1)
-        _, indices = np.unique(new, return_index=True, axis=0)
-        new = new[np.sort(indices)]
-        newLines.append(new)
+        if l.shape[0] != 0:
+            l = np.ravel(l)
+            new = np.asarray(list(pairwise(l)))
+
+            # remove redundant lines from output
+            new = np.sort(new, axis=1)
+            _, indices = np.unique(new, return_index=True, axis=0)
+            new = new[np.sort(indices)]
+            newLines.append(new)
+        else:
+            continue
 
     # concatenate the line lists into a single numpy array containing every line
     flatLines = np.concatenate(newLines)
@@ -901,16 +916,11 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     num = np.full((len(tris), 1), 3)
     tris = np.concatenate((num, tris), axis=1).astype(int)
 
-    # plot the resulting polydata
+    # # plot the resulting polydata
     poly = pv.PolyData(threeDPoints, tris)
-    p = pv.Plotter()
-    p.add_mesh(poly, color='yellow')
-    # for i in range(len(linesAround)):
-    #     ll = np.ravel(linesAround[i]).astype(int)
-    #     rr = np.ravel(lines[i]).astype(int)
-    #     p.add_lines(threeDPoints[ll], color='red')
-    #     p.add_lines(threeDPoints[rr], color='blue')
-    p.show(interactive_update=True)
+    # p = pv.Plotter()
+    # p.add_mesh(poly, color='yellow')
+    # p.show(interactive_update=True)
 
     return poly
 
