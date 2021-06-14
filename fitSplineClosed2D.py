@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # hard code file path for now
-filePath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_4.txt'
+filePath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/303-POST/outsidePoints/right_slice_6.txt'
 
 # read points from file
 points = np.loadtxt(filePath)

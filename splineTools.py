@@ -558,6 +558,8 @@ def generateNormalVectors(X, Y, Z):
             crossVector = crossVector / np.linalg.norm(crossVector)
             # assign values to output arrays. Z component of each vector is hardcoded at 0 so that vector points
             # straight outward towards the fat at each slice
+            if np.isnan(crossVector[0] or np.isnan(crossVector[1])):
+                print('stop here')
             crossX[i, j] = crossVector[0]
             crossY[i, j] = crossVector[1]
             crossZ[i, j] = 0
@@ -567,6 +569,11 @@ def generateNormalVectors(X, Y, Z):
         if crossX[i, int(numPointsPerContour / 2)] > 0:
             crossX[i, :] *= -1
             crossY[i, :] *= -1
+
+    # set the normal vectors for the last column to equal the vectors for the first - this is because the last point
+    # is the same as the first for closed contours
+    crossX[:, -1] = crossX[:, 0]
+    crossY[:, -1] = crossY[:, 0]
 
     return crossX, crossY, crossZ
 
@@ -681,7 +688,7 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     # allocate image to hold resulting contour data for each slice
     numRegionsPerSlice = np.zeros(numU)
 
-    # loop through each vertical "slice" of the parameterized surface
+    # loop through each slice of the parameterized surface
     for i in range(numU):
 
         # determine which fat points belong to separate "deposits" by finding regions separated by
@@ -689,9 +696,35 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
         beginLength = None
 
-        # indices have to be handled differently if entire slice is nonzero elements
         if np.count_nonzero(thisSlice == 0) == 0:
+            # indices have to be handled differently if entire slice is nonzero elements
             indices = [np.arange(0, len(thisSlice), 1)]
+
+            thisRegion = []
+
+            # for a fully defined slice, we expect the fat intersection to consist of two (roughly) concentric contours
+            # as such, define an "inside" and "outside" array
+            fatPointsInside = np.zeros((len(thisSlice), 3))
+            fatPointsOutside = np.zeros_like(fatPointsInside)
+
+            # inside fat contour will be same as myocardium surface
+            fatPointsInside[:, 0] = X[i, :]
+            fatPointsInside[:, 1] = Y[i, :]
+            fatPointsInside[:, 2] = Z[i, :]
+
+            # append inside contour to running tally of fat arrays
+            thisRegion.append(fatPointsInside)
+            fatRegions.append(fatPointsInside)
+
+            # outside fat contour is comprised of fat points whose distance from the myocardium is defined by
+            # the parameterized fat thickness map
+            fatPointsOutside[:, 0] = X[i, :] + (scaleFactor * thisSlice[i] * crossX[i, :])
+            fatPointsOutside[:, 1] = Y[i, :] + (scaleFactor * thisSlice[i] * crossY[i, :])
+            fatPointsOutside[:, 2] = Z[i, :]
+
+            # append outside to fat arrays
+            thisRegion.append(fatPointsOutside)
+            fatRegions.append(fatPointsOutside)
         else:
             # label regions based on connectivity such that separate fat deposits may be handled separately
             labelled, _ = label(thisSlice)
@@ -714,49 +747,41 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
                     if wrap:
                         indices[j] = np.roll(dep, -beginLength)
 
-        # make note of number of regions in each slice
-        numRegionsPerSlice[i] = len(indices)
-        # hold the region data
-        thisRegion = []
+            # make note of number of regions in each slice
+            numRegionsPerSlice[i] = len(indices)
+            # hold the region data
+            thisRegion = []
 
-        for region in indices:
-            lenRegion = max(region.shape)
-            fatPointsThisRegion = np.zeros((2 * lenRegion + 1, 2))
+            for region in indices:
+                lenRegion = max(region.shape)
+                fatPointsThisRegion = np.zeros((2 * lenRegion + 1, 2))
 
-            # generate a fat surface point by traveling along the direction of the normal vector in accordance
-            # with the magnitude of fat thickness at the current parameter location
-            thisX = X[i, region] + (scaleFactor * thisSlice[region] * crossX[i, region])
-            thisY = Y[i, region] + (scaleFactor * thisSlice[region] * crossY[i, region])
+                # generate a fat surface point by traveling along the direction of the normal vector in accordance
+                # with the magnitude of fat thickness at the current parameter location
+                thisX = X[i, region] + (scaleFactor * thisSlice[region] * crossX[i, region])
+                thisY = Y[i, region] + (scaleFactor * thisSlice[region] * crossY[i, region])
 
-            # add fat points to list
-            fatPointsThisRegion[0:lenRegion] = np.column_stack((np.squeeze(thisX), np.squeeze(thisY)))
+                # add fat points to list
+                fatPointsThisRegion[0:lenRegion] = np.column_stack((np.squeeze(thisX), np.squeeze(thisY)))
 
-            # flip region index array such that points are added to overall array in "contour order"
-            wrap = (0 in region) and (99 in region)
-            if not wrap and numRegionsPerSlice[i] > 1:
+                # flip region index array such that points are added to overall array in "contour order"
                 region = np.fliplr(region)
 
-            # add surface points corresponding with fat points to array, such that a closed contour can be generated
-            # from the surface points
-            fatPointsThisRegion[lenRegion:-1] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
+                # add surface points corresponding with fat points to array, such that a closed contour can be generated
+                # from the surface points
+                fatPointsThisRegion[lenRegion:-1] = np.column_stack((np.squeeze(X[i, region]), np.squeeze(Y[i, region])))
 
-            # duplicate first point for closed contour
-            fatPointsThisRegion[-1, :] = fatPointsThisRegion[0, :]
+                # duplicate first point for closed contour
+                fatPointsThisRegion[-1, :] = fatPointsThisRegion[0, :]
 
-            if beginLength:
-                fig = plt.figure()
-                for points in fatPointsThisRegion:
-                    plt.scatter(points[0], points[1])
-                    plt.show()
+                # add z-axis coordinates to fat point array
+                zz = np.full((2 * lenRegion + 1, 1), Z[i, 0])
+                fatPointsThisRegion = np.concatenate((fatPointsThisRegion, zz), axis=1)
 
-            # add z-axis coordinates to fat point array
-            zz = np.full((2 * lenRegion + 1, 1), Z[i, 0])
-            fatPointsThisRegion = np.concatenate((fatPointsThisRegion, zz), axis=1)
+                # append the points from this region to the overall list
+                thisRegion.append(fatPointsThisRegion)
 
-            # append the points from this region to the overall list
-            thisRegion.append(fatPointsThisRegion)
-
-            fatRegions.append(fatPointsThisRegion)
+                fatRegions.append(fatPointsThisRegion)
 
         # collapse fat regions into single point array and append
         if len(thisRegion) > 0:
@@ -797,13 +822,18 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             linesAround.append(thisLinesAround)
 
             # perform KDTree query for this fat deposit
-            _, ids = thisTree.query(thisFatDeposit[:, 0:2])
+            dists, ids = thisTree.query(thisFatDeposit[:, 0:2])
+            mask = dists < 5
 
             # add point index to line ids so that they connect to points on the correct slice
             ids += nextSliceIndex
 
             # finish defining line connectivity and append lines from this deposit to the overall list
             thisLines[:, 1] = ids
+            # mask off connections that generate excessively long lines - these connections contribute to the formation
+            # of undesirable triangles in the output
+            thisLines = thisLines[mask, :]
+            # append this region's lines to the overall list of lines
             lines.append(thisLines)
 
             # update point index
@@ -812,14 +842,14 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         # update indices before moving on to next slice
         depositIndex += int(numRegionsPerSlice[j])
 
-    p = pv.Plotter()
-    p.add_mesh(threeDPoints, point_size=10)
-    for i in range(len(linesAround)):
-        ll = np.ravel(linesAround[i]).astype(int)
-        rr = np.ravel(lines[i]).astype(int)
-        p.add_lines(threeDPoints[ll], color='red')
-        p.add_lines(threeDPoints[rr], color='blue')
-    p.show()
+    # p = pv.Plotter()
+    # p.add_mesh(threeDPoints, point_size=10)
+    # for i in range(len(linesAround)):
+    #     ll = np.ravel(linesAround[i]).astype(int)
+    #     rr = np.ravel(lines[i]).astype(int)
+    #     p.add_lines(threeDPoints[ll], color='red')
+    #     p.add_lines(threeDPoints[rr], color='blue')
+    # p.show()
 
     # restructure array such that diagonal lines are explicitly defined. This is accomplished by taking each consecutive
     # pair of point indices and storing them as a row in a new array
@@ -883,12 +913,6 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     p.show(interactive_update=True)
 
     return poly
-
-
-
-
-
-
 
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
