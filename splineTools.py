@@ -792,23 +792,26 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     # concatenate points and lines from all slices into a single numpy array
     threeDPoints = np.concatenate(fatRegions)
 
-    # loop through each fat slice
+    # loop through each fat slice to generate the lines that will comprise the edges of the triangles that will
+    # represent the fat surface
     lines = []
     linesAround = []
     depositIndex = 0
     pointIndex = 0
     nextSliceIndex = 0
-    for j in range(len(fatSlices)):
+    zeroSlices = 0
+    for j in range(numU):
 
         # skip this slice index if there are no fat points for the slice
         if int(numRegionsPerSlice[j]) == 0:
+            zeroSlices += 1
             continue
         # get number of points in this slice
-        thisSliceLen = len(fatSlices[j])
+        thisSliceLen = len(fatSlices[j - zeroSlices])
 
         # update KDTree to reflect points of the next slice - unless the current slice is the uppermost slice
-        if j != len(fatSlices) - 1:
-            thisTree = KDTree(fatSlices[j+1][:, 0:2])
+        if j != numU - 1:
+            thisTree = KDTree(fatSlices[j-zeroSlices+1][:, 0:2])
             # update next slice index so that lines connect properly to the next slice up
             nextSliceIndex += thisSliceLen
 
@@ -825,7 +828,7 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             linesAround.append(thisLinesAround)
 
             # generate lines connecting to next slice up, unless this is region belongs to the topmost slice
-            if j != len(fatSlices) - 1:
+            if j != numU - 1:
                 # define lines array
                 thisLines = np.zeros((len(thisFatDeposit), 2))
                 thisLines[:, 0] = np.arange(pointIndex, pointIndex + len(thisFatDeposit), 1)
@@ -842,8 +845,9 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
                 # mask off connections that generate excessively long lines - these connections contribute to the
                 # formation of undesirable triangles in the output
                 thisLines = thisLines[mask, :]
-                # append this region's lines to the overall list of lines
-                lines.append(thisLines)
+                if thisLines.shape[0] > 0:
+                    # append this region's lines to the overall list of lines if they have not all been masked off
+                    lines.append(thisLines)
 
             # update point index
             pointIndex += len(thisFatDeposit)
@@ -851,35 +855,20 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         # update indices before moving on to next slice
         depositIndex += int(numRegionsPerSlice[j])
 
-    # p = pv.Plotter()
-    # p.add_mesh(threeDPoints, point_size=10)
-    # for i in range(len(linesAround)):
-    #     ll = np.ravel(linesAround[i]).astype(int)
-    #     p.add_lines(threeDPoints[ll], color='red')
-    #
-    # for i in range(len(lines)):
-    #     ll = np.ravel(lines[i]).astype(int)
-    #     p.add_lines(threeDPoints[ll], color='blue')
-    # p.show()
-
     # restructure array such that diagonal lines are explicitly defined. This is accomplished by taking each consecutive
     # pair of point indices and storing them as a row in a new array
     # TODO do this without more_itertools
     from more_itertools import pairwise
     newLines = []
     for l in lines:
+        l = np.ravel(l)
+        new = np.asarray(list(pairwise(l)))
 
-        if l.shape[0] != 0:
-            l = np.ravel(l)
-            new = np.asarray(list(pairwise(l)))
-
-            # remove redundant lines from output
-            new = np.sort(new, axis=1)
-            _, indices = np.unique(new, return_index=True, axis=0)
-            new = new[np.sort(indices)]
-            newLines.append(new)
-        else:
-            continue
+        # remove redundant lines from output
+        new = np.sort(new, axis=1)
+        _, indices = np.unique(new, return_index=True, axis=0)
+        new = new[np.sort(indices)]
+        newLines.append(new)
 
     # concatenate the line lists into a single numpy array containing every line
     flatLines = np.concatenate(newLines)
@@ -930,10 +919,19 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     # add a column of 3's to the triangle array because pyvista requires that the number of edges in a face be specified
     tris = np.asarray(tris)
+
+    # remove redundant triangles that inevitably form from the above process
+    tris = np.sort(tris, axis=1)
+    _, indices = np.unique(tris, return_index=True, axis=0)
+    tris = tris[np.sort(indices)]
+
+    for ind, c in enumerate(numCons):
+        cx, cy = np.where(tris == c)
+
     num = np.full((len(tris), 1), 3)
     tris = np.concatenate((num, tris), axis=1).astype(int)
 
-    # # plot the resulting polydata
+    # # # plot the resulting polydata
     poly = pv.PolyData(threeDPoints, tris)
     p = pv.Plotter()
     p.add_mesh(poly, color='yellow')

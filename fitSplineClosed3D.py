@@ -12,11 +12,11 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
+# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
 
 # fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
@@ -24,14 +24,14 @@ vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtk
 # leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
 
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
+fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
 
-startFrame = 3
-stopFrame = 8
+startFrame = 2
+stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
 # resample the data so each slice has the same number of points
@@ -40,39 +40,6 @@ resampleNumControlPoints = 7
 degree = 3
 numControlPointsU = 9
 numControlPointsV = 6
-
-# # perform spline routine for right side
-# # read in points from files
-# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame, 10)
-#
-# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-#     splineTools.reSampleAndSmoothPointsOpen(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-#
-# rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-#                                                              numControlPointsV, degree, numPointsPerContour, numSlices,
-#                                                            , fix_samples=True)
-#
-# # perform spline routine for left side
-# # read in points from files
-# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame, 10)
-#
-# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-#     splineTools.reSampleAndSmoothPointsOpen(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-#
-# leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-#                                                                          numControlPointsV, degree, numPointsPerContour,
-#                                                                          numSlices, fix_samples=True)
-#
-# lVert = np.column_stack((np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ)))
-# LL = pv.PolyData(lVert)
-#
-# rVert = np.column_stack((np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ)))
-# RR = pv.PolyData(rVert)
-#
-# pl = pv.Plotter()
-# pl.add_mesh(LL, color='red')
-# pl.add_mesh(RR, color='blue')
-# pl.show()
 
 # read in points from files
 origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(fileName, startFrame, stopFrame, 10)
@@ -205,7 +172,7 @@ elevation = 15
 # plt.show()
 
 # ########################################################################################################################
-# # # plot control points and the surface on the same plot
+# # plot control points and the surface on the same plot
 # fig = plt.figure()
 # ax = fig.gca(projection='3d')
 # ax.set_title('Combined plot')
@@ -309,9 +276,6 @@ degree = 3
 mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
                                     fix_samples=True)
 
-# mX, mY, mZ, _, _, _, _, _, mTri = splineTools.fitSplineClosed3D(x, y, thicknessByPoint, 9, 6, 3, numPointsPerContour,
-#                                                                 numSlices, fix_samples=True)
-
 scaleFactor = np.max(thicknessByPoint) / np.max(mZ)
 mZ *= scaleFactor
 
@@ -336,7 +300,7 @@ mZ *= scaleFactor
 
 # call the fat triangulation function to create a 3D fat surface from the mountain plot
 start = time.perf_counter()
-fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 5)
+fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 0)
 stop = time.perf_counter()
 print(f'Fat surface generation took {stop-start} seconds')
 
