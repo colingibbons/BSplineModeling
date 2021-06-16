@@ -896,6 +896,23 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         cV = allLines[lX, lY].astype(int)
         connectedVertices.append(cV)
 
+    # find vertices with less than six connections. Five connections or less seems to be the sweet spot for isolating
+    # vertices on the edge of the surface without including any non-edge points
+    numCons = [idx for idx, elem in enumerate(connectedVertices) if len(elem) < 6]
+    numCons = np.asarray(numCons)
+    tree = KDTree(threeDPoints[numCons])
+    results = tree.query_ball_point(threeDPoints[numCons], 3)
+    targetPoints = [connectedVertices[i] for i in numCons]
+
+    # edgeLines = []
+    # for idx, point in enumerate(targetPoints):
+    #     unique = set(point) ^ set(results[idx])
+    #     if numCons[idx] in unique:
+    #         unique.remove(numCons[idx])
+    #     for vertex in unique:
+    #         thisLine = [numCons[idx], vertex]
+    #         edgeLines.append(thisLine)
+
     # generate the triangles that will comprise the output polydata by looping through each vertex and checking the
     # points to which it is connected. If a vertex is connected to two other vertices and those two vertices are also
     # connected to one another, the three vertices are saved as a triangle.
@@ -918,9 +935,10 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     # # plot the resulting polydata
     poly = pv.PolyData(threeDPoints, tris)
-    # p = pv.Plotter()
-    # p.add_mesh(poly, color='yellow')
-    # p.show(interactive_update=True)
+    p = pv.Plotter()
+    p.add_mesh(poly, color='yellow')
+    p.add_mesh(threeDPoints[numCons], color='red', point_size=12)
+    p.show(interactive_update=True)
 
     return poly
 
