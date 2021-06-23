@@ -18,11 +18,11 @@ import splineTools
 # leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
 
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/310-PRE/vtkModels/'
+# fileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/vtkModels/'
 
 fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/combined_slice_'
 fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/outsidePoints/fat_slice_'
@@ -33,13 +33,6 @@ vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/303-POST/vtkModels/'
 startFrame = 2
 stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
-
-# resample the data so each slice has the same number of points
-# do this by fitting each slice with B-spline curve
-resampleNumControlPoints = 7
-degree = 3
-numControlPointsU = 9
-numControlPointsV = 6
 
 # read in points from files
 origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(fileName, startFrame, stopFrame, 10)
@@ -88,8 +81,8 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 # plt.show()
 
 # set up parameters for spline fit
-numControlPointsU = 9
-numControlPointsV = 6
+numControlPointsU = numSlices + degree
+numControlPointsV = numSlices
 degree = 3
 numCalcControlPointsU = numControlPointsU + degree
 
@@ -100,13 +93,6 @@ X, Y, Z, Vx, Vy, Vz, U, V, tri = splineTools.fitSplineClosed3D(resampX, resampY,
 
 # update number of points per contour in case resampling was applied
 numPointsPerContour = X.shape[1]
-
-# calculate the error of the fit between surface and resampled data
-# errorInFitMatrix = (X - resampX)**2 + (Y-resampY)**2 + (Z-resampZ)**2
-# errorInSurfaceFit = np.sum(errorInFitMatrix)
-# totalResampleError = errorInSurfaceFit
-# maxErrorInSurfaceFit = np.max(errorInFitMatrix)
-# avgErrorInSurfaceFit = errorInSurfaceFit / (numSlices * numPointsPerContour)
 
 ########################################################################################################################
 # plot all data on same scale
@@ -165,7 +151,7 @@ elevation = 15
 #
 # # now plot the surface
 # ax = fig.add_subplot(2, 2, 4, projection='3d')
-# ax.set_title('{0}x{1}'.format(lengthU, lengthV))  # can add error metrics to title later if necessary
+# # ax.set_title('{0}x{1}'.format(lengthU, lengthV))  # can add error metrics to title later if necessary
 # ax.plot_surface(X, Y, Z)
 #
 # # now that all subplots have been generated, display them on a single figure
@@ -272,11 +258,16 @@ zStem = np.ravel(thicknessByPoint)
 # plt.ylabel('Elevation ({})'.format(numSlices))
 # plt.colorbar()
 
-degree = 3
-mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
-                                    fix_samples=True)
+# degree = 3
+# mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
+#                                     fix_samples=True)
+
+mX, mY, mZ, _, _, _, _, _, mTri = splineTools.fitSplineClosed3D(x, y, thicknessByPoint, numControlPointsU,
+                                                                numControlPointsV, 3, numPointsPerContour, numSlices,
+                                                                fix_samples=True)
 
 scaleFactor = np.max(thicknessByPoint) / np.max(mZ)
+# scaleFactor = 5
 mZ *= scaleFactor
 
 # fig = plt.figure()
@@ -300,7 +291,7 @@ mZ *= scaleFactor
 
 # call the fat triangulation function to create a 3D fat surface from the mountain plot
 start = time.perf_counter()
-fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 0)
+fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1.0)
 stop = time.perf_counter()
 print(f'Fat surface generation took {stop-start} seconds')
 
@@ -353,8 +344,6 @@ origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFile
 
 # resample the data so each slice has the same number of points
 # do this by fitting each slice with B-spline curve
-resampleNumControlPoints = 7
-degree = 3
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 

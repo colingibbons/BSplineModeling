@@ -558,8 +558,7 @@ def generateNormalVectors(X, Y, Z):
             crossVector = crossVector / np.linalg.norm(crossVector)
             # assign values to output arrays. Z component of each vector is hardcoded at 0 so that vector points
             # straight outward towards the fat at each slice
-            if np.isnan(crossVector[0] or np.isnan(crossVector[1])):
-                print('stop here')
+
             crossX[i, j] = crossVector[0]
             crossY[i, j] = crossVector[1]
             crossZ[i, j] = 0
@@ -885,23 +884,6 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         cV = allLines[lX, lY].astype(int)
         connectedVertices.append(cV)
 
-    # find vertices with less than six connections. Five connections or less seems to be the sweet spot for isolating
-    # vertices on the edge of the surface without including any non-edge points
-    numCons = [idx for idx, elem in enumerate(connectedVertices) if len(elem) < 6]
-    numCons = np.asarray(numCons)
-    tree = KDTree(threeDPoints[numCons])
-    results = tree.query_ball_point(threeDPoints[numCons], 3)
-    targetPoints = [connectedVertices[i] for i in numCons]
-
-    # edgeLines = []
-    # for idx, point in enumerate(targetPoints):
-    #     unique = set(point) ^ set(results[idx])
-    #     if numCons[idx] in unique:
-    #         unique.remove(numCons[idx])
-    #     for vertex in unique:
-    #         thisLine = [numCons[idx], vertex]
-    #         edgeLines.append(thisLine)
-
     # generate the triangles that will comprise the output polydata by looping through each vertex and checking the
     # points to which it is connected. If a vertex is connected to two other vertices and those two vertices are also
     # connected to one another, the three vertices are saved as a triangle.
@@ -925,17 +907,21 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     _, indices = np.unique(tris, return_index=True, axis=0)
     tris = tris[np.sort(indices)]
 
-    for ind, c in enumerate(numCons):
-        cx, cy = np.where(tris == c)
+    # get a list of all vertices which are present in fewer than six triangles. This hones in on edge vertices which
+    # are frequently on the gaps in the triangulation that need to be filled
+    numCons = [idx for idx, elem in enumerate(connectedVertices) if len(elem) < 6]
+
+    # TODO check for triple pairs of vertices in the triCon array that form a triangle which doesn't currently exist.
+    triCon = [idx for idx, elem in enumerate(threeDPoints) if len(np.where(tris == idx)[0]) < 6]
 
     num = np.full((len(tris), 1), 3)
     tris = np.concatenate((num, tris), axis=1).astype(int)
 
-    # # # plot the resulting polydata
+    # plot the resulting polydata
     poly = pv.PolyData(threeDPoints, tris)
     p = pv.Plotter()
     p.add_mesh(poly, color='yellow')
-    p.add_mesh(threeDPoints[numCons], color='red', point_size=12)
+    p.add_mesh(threeDPoints[triCon], color='red', point_size=12)
     p.show(interactive_update=True)
 
     return poly
@@ -986,6 +972,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
             vVal = V[s, 0]
             C[s, j] = NVal(tauV, vVal, j - 1, degree, 0)
 
+    C[-1, -1] = 1.0
     # now set up Px, Py, and Pz matrices
     Px = np.transpose(resampX)
     Py = np.transpose(resampY)
