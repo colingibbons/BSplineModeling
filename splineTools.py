@@ -1,12 +1,10 @@
 import numpy as np
 from scipy.ndimage.measurements import label
+from scipy.spatial import KDTree
 from matplotlib.tri import triangulation as mtra
-from matplotlib.tri import TriAnalyzer
-import matplotlib.pyplot as plt
+import itertools
 import pyvista as pv
-from PIL import Image
 import time
-from scipy.spatial import Delaunay, delaunay_plot_2d, Voronoi, voronoi_plot_2d, KDTree
 
 # this function performs a polar reordering of points
 def reOrder(points):
@@ -684,18 +682,19 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     fatSlices = []
     fatRegions = []
 
-    # allocate image to hold resulting contour data for each slice
+    # keep track of number of separate fat regions in each slice
     numRegionsPerSlice = np.zeros(numU)
 
     # loop through each slice of the parameterized surface
     for i in range(numU):
 
-        # determine which fat points belong to separate "deposits" by finding regions separated by
         thisSlice = fatThicknessZ[i]
         thisRegion = []
 
         beginLength = None
 
+        # determine which fat points belong to separate "deposits" by finding regions separated by areas
+        # of zero thickness
         if np.count_nonzero(thisSlice == 0) == 0:
             # indices have to be handled differently if entire slice is nonzero elements
             indices = [np.arange(0, len(thisSlice), 1)]
@@ -820,7 +819,7 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
             # grab this specific fat deposit from the region list
             thisFatDeposit = fatRegions[depositIndex + k]
 
-            # define contour lines array
+            # define contour lines array (lines existing on a single z-axis slice)
             thisLinesAround = np.zeros((len(thisFatDeposit), 2))
             thisLinesAround[:, 0] = np.arange(pointIndex, pointIndex+len(thisFatDeposit), 1)
             thisLinesAround[:, 1] = np.roll(thisLinesAround[:, 0], -1)
@@ -828,11 +827,12 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
             # generate lines connecting to next slice up, unless this is region belongs to the topmost slice
             if j != numU - 1:
-                # define lines array
+                # define array to hold lines that will span two successive slices
                 thisLines = np.zeros((len(thisFatDeposit), 2))
                 thisLines[:, 0] = np.arange(pointIndex, pointIndex + len(thisFatDeposit), 1)
 
-                # perform KDTree query for this fat deposit
+                # perform KDTree query for this fat deposit to find closest vertex on the next slice to each
+                # vertex on the current slice
                 dists, ids = thisTree.query(thisFatDeposit[:, 0:2])
                 mask = dists < 5
 
@@ -856,12 +856,15 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     # restructure array such that diagonal lines are explicitly defined. This is accomplished by taking each consecutive
     # pair of point indices and storing them as a row in a new array
-    # TODO do this without more_itertools
-    from more_itertools import pairwise
     newLines = []
     for l in lines:
         l = np.ravel(l)
-        new = np.asarray(list(pairwise(l)))
+
+        # this algorithm is defined in the more_itertools expansion package as "pairwise". Since it's a simple
+        # algorithm, it's implemented directly to avoid adding another dependency to PATS
+        a, b = itertools.tee(l)
+        next(b, None)
+        new = np.asarray(list(zip(a, b)))
 
         # remove redundant lines from output
         new = np.sort(new, axis=1)
@@ -888,15 +891,20 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     # points to which it is connected. If a vertex is connected to two other vertices and those two vertices are also
     # connected to one another, the three vertices are saved as a triangle.
     tris = []
-    for m in range(len(threeDPoints)):
-        thisVertex = connectedVertices[m]
+    for thisVertex in range(len(threeDPoints)):
+        # get list of vertices connected to the current vertex
+        connectedToThisVertex = connectedVertices[thisVertex]
 
-        for neighbor in thisVertex:
+        # loop through each vertex connected to the current vertex
+        for neighbor in connectedToThisVertex:
+            # get a list of vertices to which this neighbor vertex is connected
             conn = connectedVertices[neighbor]
-            common = np.intersect1d(thisVertex, conn)
+            # determine whether this neighboring vertex shares a common connection with the current vertex
+            common = np.intersect1d(connectedToThisVertex, conn)
             if len(common) > 0:
+                # each common connection forms a triangle with the current vertex and its neighbor
                 for match in common:
-                    newTri = [m, neighbor, match]
+                    newTri = [thisVertex, neighbor, match]
                     tris.append(newTri)
 
     # add a column of 3's to the triangle array because pyvista requires that the number of edges in a face be specified
@@ -907,13 +915,65 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     _, indices = np.unique(tris, return_index=True, axis=0)
     tris = tris[np.sort(indices)]
 
-    # get a list of all vertices which are present in fewer than six triangles. This hones in on edge vertices which
-    # are frequently on the gaps in the triangulation that need to be filled
-    numCons = [idx for idx, elem in enumerate(connectedVertices) if len(elem) < 6]
+    # generate a list of edges in this surface - including duplicates when an edge contributes to multiple triangles
+    oneEdges = []
+    for t in tris:
+        linesTri = np.asarray(list(itertools.combinations(t, 2)))
+        oneEdges.append(linesTri)
 
-    # TODO check for triple pairs of vertices in the triCon array that form a triangle which doesn't currently exist.
-    triCon = [idx for idx, elem in enumerate(threeDPoints) if len(np.where(tris == idx)[0]) < 6]
+    # filter the edge list to obtain a list of edges that contribute to fewer than two triangles
+    oneEdges = np.concatenate(oneEdges)
+    oneEdges = np.sort(oneEdges, axis=1)
+    _, indices, counts = np.unique(oneEdges, return_index=True, return_counts=True, axis=0)
+    mm = np.array((counts < 2), dtype=bool)
+    indices = indices[mm]
+    oneEdges = oneEdges[np.sort(indices)]
 
+    # examine each edge that contributes to fewer than two triangles and determine if it should be part of a triangle.
+    # the typical reason for missing a triangle is that the closed contours on each slice contain duplicated points,
+    # meaning that the same point in 3D space has multiple indices in the point array. This loop accounts for these
+    # cases and generates the missing triangles from them.
+    missedTris = []
+    for thisEdge in oneEdges:
+
+        # find other lines that connect to the each vertex of this line
+        lX = np.where(oneEdges == thisEdge[0])[0]
+        lY = np.where(oneEdges == thisEdge[1])[0]
+        conn1 = oneEdges[lX, :]
+        conn2 = oneEdges[lY, :]
+
+        # get a list of unique vertices to which that share connections with the vertices of the current line
+        allCon = np.concatenate((conn1, conn2))
+        un = np.unique(allCon)
+
+        # make a list of pairs of vertices from the vertex list
+        comb = np.asarray(list(itertools.combinations(un, 2)))
+        for c in comb:
+            # check each pair of vertices to see if they represent the same point in 3D space
+            pts = np.around(threeDPoints[c], decimals=4)
+            if np.all(np.equal(pts[0], pts[1])):
+                # if two point indices represent duplicate points in 3D space, flip all instances of one to the other
+                allCon[allCon == c[1]] = c[0]
+
+        # find vertices which occur at least twice in the list
+        elem, counts = np.unique(allCon, return_counts=True)
+        repeated = elem[counts > 1]
+        # if three vertices appear more than once, save them as a new triangle
+        if len(repeated) == 3:
+            missedTris.append(repeated)
+
+    # collapse missed triangle list into numpy array
+    missedTris = np.row_stack(missedTris)
+
+    # remove redundant triangles
+    missedTris = np.sort(missedTris, axis=1)
+    _, indices = np.unique(missedTris, return_index=True, axis=0)
+    missedTris = missedTris[np.sort(indices)]
+
+    # add missed triangles to overall triangle array
+    tris = np.concatenate((tris, missedTris), axis=0)
+
+    # pyvista requires number of vertices in each faced to be specified, so add a column of 3's to the triangle array
     num = np.full((len(tris), 1), 3)
     tris = np.concatenate((num, tris), axis=1).astype(int)
 
@@ -921,8 +981,7 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     poly = pv.PolyData(threeDPoints, tris)
     p = pv.Plotter()
     p.add_mesh(poly, color='yellow')
-    p.add_mesh(threeDPoints[triCon], color='red', point_size=12)
-    p.show(interactive_update=True)
+    p.show()
 
     return poly
 
@@ -972,7 +1031,6 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
             vVal = V[s, 0]
             C[s, j] = NVal(tauV, vVal, j - 1, degree, 0)
 
-    C[-1, -1] = 1.0
     # now set up Px, Py, and Pz matrices
     Px = np.transpose(resampX)
     Py = np.transpose(resampY)
@@ -1056,8 +1114,8 @@ def createVTKModel(X, Y, Z, triangles, filePath):
 def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_samples=False, progressBar=None):
 
     # set up parameters for spline fit
-    numControlPointsU = 4
-    numControlPointsV = 4
+    numControlPointsU = numSlices + degree
+    numControlPointsV = numSlices
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     numCalcControlPointsU = numControlPointsU + degree
@@ -1080,8 +1138,6 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_sa
     uVect = np.linspace(0, 1, numPointsPerContour)
     vVect = np.linspace(0, 1, numSlices)
     U, V = np.meshgrid(uVect, vVect)
-
-    # U, V = parameterizeFat(resampX, resampY, resampZ, tauU, tauV, degree)
 
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
