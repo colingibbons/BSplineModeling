@@ -2,7 +2,7 @@ import numpy as np
 from scipy.ndimage.measurements import label
 from scipy.spatial import KDTree
 from matplotlib.tri import triangulation as mtra
-import itertools
+from itertools import combinations, tee
 import pyvista as pv
 import time
 
@@ -861,8 +861,9 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         l = np.ravel(l)
 
         # this algorithm is defined in the more_itertools expansion package as "pairwise". Since it's a simple
-        # algorithm, it's implemented directly to avoid adding another dependency to PATS
-        a, b = itertools.tee(l)
+        # algorithm, it's implemented directly to avoid adding another dependency to PATS (itertools itself is
+        # part of the Python standard library)
+        a, b = tee(l)
         next(b, None)
         new = np.asarray(list(zip(a, b)))
 
@@ -918,7 +919,7 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
     # generate a list of edges in this surface - including duplicates when an edge contributes to multiple triangles
     oneEdges = []
     for t in tris:
-        linesTri = np.asarray(list(itertools.combinations(t, 2)))
+        linesTri = np.asarray(list(combinations(t, 2)))
         oneEdges.append(linesTri)
 
     # filter the edge list to obtain a list of edges that contribute to fewer than two triangles
@@ -947,7 +948,7 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         un = np.unique(allCon)
 
         # make a list of pairs of vertices from the vertex list
-        comb = np.asarray(list(itertools.combinations(un, 2)))
+        comb = np.asarray(list(combinations(un, 2)))
         for c in comb:
             # check each pair of vertices to see if they represent the same point in 3D space
             pts = np.around(threeDPoints[c], decimals=4)
@@ -1114,8 +1115,8 @@ def createVTKModel(X, Y, Z, triangles, filePath):
 def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_samples=False, progressBar=None):
 
     # set up parameters for spline fit
-    numControlPointsU = numSlices + degree
-    numControlPointsV = numSlices
+    numControlPointsU = degree + 1
+    numControlPointsV = degree
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     numCalcControlPointsU = numControlPointsU + degree

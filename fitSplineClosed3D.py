@@ -5,6 +5,7 @@ from os import mkdir
 import yaml
 import pyvista as pv
 import time
+from scipy.signal import savgol_filter
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -12,11 +13,11 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
+fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
+leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
+vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
 
 # fileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/combined_slice_'
 # fatName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/fat_slice_'
@@ -24,15 +25,89 @@ import splineTools
 # leftFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/left_slice_'
 # vtkPath = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/vtkModels/'
 
-fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
+# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
 
 startFrame = 3
 stopFrame = 8
 numSlices = (stopFrame - startFrame) + 1
+
+#######################################################################################################################
+resampleNumControlPoints = 6
+degree = 3
+numControlPointsU = numSlices + degree
+numControlPointsV = numSlices
+
+origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame, 10)
+
+resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+    splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+
+
+resampleNumControlPoints = 10
+degree = 7
+rx, ry, rz, _, _, _, _, _ = splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour,
+                                                                  resampleNumControlPoints, degree)
+degree = 3
+
+# for s in range(len(rx)):
+#     fig = plt.figure()
+#     plt.scatter(resampX[s, :], resampY[s, :], c='red')
+#     plt.scatter(origX[s, :], origY[s, :], c='green')
+#     # plt.scatter(rx[s, :], ry[s, :], c='blue')
+#     plt.show()
+
+rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
+                                                                            numControlPointsU, numControlPointsV,
+                                                                            degree, numPointsPerContour,
+                                                                            numSlices, fix_samples=True)
+
+# perform spline routine for left side
+# read in points from files
+origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame, 10)
+
+# resample the data so each slice has the same number of points
+# do this by fitting each slice with B-spline curve
+resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+    splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+
+
+leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+                                                                         numControlPointsV, degree, numPointsPerContour,
+                                                                         numSlices, fix_samples=True)
+
+rxx = np.ravel(rightX)
+ryy = np.ravel(rightY)
+rzz = np.ravel(rightZ)
+
+rpts = np.column_stack((rxx, ryy, rzz))
+
+rtris = rTri.triangles
+threes = np.full((len(rtris), 1), 3)
+rtris = np.concatenate((threes, rtris), axis=1)
+
+lxx = np.ravel(leftX)
+lyy = np.ravel(leftY)
+lzz = np.ravel(leftZ)
+
+lpts = np.column_stack((lxx, lyy, lzz))
+
+ltris = lTri.triangles
+threes = np.full((len(ltris), 1), 3)
+ltris = np.concatenate((threes, ltris), axis=1)
+
+lPoly = pv.PolyData(lpts, ltris)
+rPoly = pv.PolyData(rpts, rtris)
+p = pv.Plotter()
+p.add_mesh(lPoly, color='blue')
+p.add_mesh(rPoly, color='red')
+p.show()
+
+
+#######################################################################################################################
 
 # read in points from files
 origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(fileName, startFrame, stopFrame, 10)
@@ -177,8 +252,8 @@ elevation = 15
 # # add vertical connections
 # for i in range(numCalcControlPointsU):
 #     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
-#
-# # plot the surface
+
+# plot the surface
 # ax.plot_surface(X, Y, Z)
 
 # read fat points from file and add them to the scene
@@ -258,23 +333,25 @@ zStem = np.ravel(thicknessByPoint)
 # plt.ylabel('Elevation ({})'.format(numSlices))
 # plt.colorbar()
 
-# degree = 3
-# mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degree, numSlices, numPointsPerContour,
-#                                     fix_samples=True)
-# from scipy.ndimage import interpolation
-# thickness = np.transpose(thicknessByPoint)
-# output = np.zeros((100, 100))
-# zoomFactor = 100 / numSlices
-# for index, row in enumerate(thickness):
-#     output[index, :] = interpolation.zoom(row, zoomFactor)
-from PIL import Image
-output = Image.fromarray(thicknessByPoint)
-output = output.resize((100, 100))
-mZ = np.array(output)
+thicknessByPoint2 = savgol_filter(thicknessByPoint, 99, 3)
 
-scaleFactor = np.max(thicknessByPoint) / np.max(mZ)
-# scaleFactor = 5
-mZ *= scaleFactor
+degree = 3
+mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint2, degree, numSlices, numPointsPerContour,
+                                            fix_samples=True)
+
+mxx = np.ravel(mX)
+myy = np.ravel(mY)
+mzz = np.ravel(mZ)
+mTris = mTri.triangles
+
+# threes = np.full((len(mTris), 1), 3)
+# mTris = np.concatenate((threes, mTris), axis=1)
+#
+# pts = np.column_stack((mxx, myy, mzz))
+# mountainPoly = pv.PolyData(pts, mTris)
+# p = pv.Plotter()
+# p.add_mesh(mountainPoly)
+# p.show()
 
 # fig = plt.figure()
 # ax = fig.add_subplot(3, 1, 1)
@@ -297,7 +374,7 @@ mZ *= scaleFactor
 
 # call the fat triangulation function to create a 3D fat surface from the mountain plot
 start = time.perf_counter()
-fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 0)
+fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 2.5)
 stop = time.perf_counter()
 print(f'Fat surface generation took {stop-start} seconds')
 
