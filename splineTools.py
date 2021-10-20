@@ -5,6 +5,12 @@ from matplotlib.tri import triangulation as mtra
 from itertools import combinations, tee
 import pyvista as pv
 import time
+from ctypes import POINTER, c_float, c_int
+
+# load B-spline basis function from DLL file
+dll = np.ctypeslib.load_library('NVal', 'NVal.dll')
+dll.NVal.restype = c_float
+dll.NVal.argtypes = [POINTER(c_float), c_float, c_int, c_int, c_int, c_int]
 
 # this function performs a polar reordering of points
 def reOrder(points):
@@ -107,52 +113,55 @@ def parameterizeOpenCurve(points):
 
     return parameters
 
-# Normalized B-spline by recursion
-# TODO make a more efficient version of this because it's called so many times?
-def NVal(tau, t, i, d, r):
-    if i + d + 2 > len(tau) or d < 0 or r < 0:
-        N = 0
-        return N
-    if t < tau[i+1] or t > tau[i+d+2]:
-        N = 0
-        return N
+# # Implementation of the recursive B-spline basis function
+# # TODO make a more efficient version of this because it's called so many times?
+# def NVal(tau, t, i, d, r):
+#     if i + d + 2 > len(tau) or d < 0 or r < 0:
+#         N = 0
+#         return N
+#     if t < tau[i+1] or t > tau[i+d+2]:
+#         N = 0
+#         return N
+#
+#     if r > 0:
+#         if tau[i+d+1] > tau[i+1]:
+#             f1 = d / (tau[i+d+1] - tau[i+1])
+#         else:
+#             f1 = 0
+#
+#         if tau[i+d+2] > tau[i+2]:
+#             f2 = d / (tau[i+d+2] - tau[i+2])
+#         else:
+#             f2 = 0
+#         N = f1*NVal(tau, t, i, d-1, r-1) - f2*NVal(tau, t, i+1, d-1, r-1)
+#         return N
+#
+#     if d == 0:
+#         if t >= tau[i+1] and t < tau[i+2]:
+#             N = 1
+#         elif t >= tau[i+1] and t <= tau[i+2] and tau[i+1] < tau[i+2] and tau[i+2] == tau[len(tau) - 1]:
+#             N = 1
+#         else:
+#             N = 0
+#         return N
+#
+#     if tau[i+d+1] > tau[i+1]:
+#         f1 = (t - tau[i+1]) / (tau[i+d+1] - tau[i+1])
+#     else:
+#         f1 = 0
+#
+#     if tau[i+d+2] > tau[i+2]:
+#         f2 = (tau[i+d+2] - t) / (tau[i+d+2] - tau[i+2])
+#     else:
+#         f2 = 0
+#
+#     N = f1*NVal(tau, t, i, d-1, r) + f2*NVal(tau, t, i+1, d-1, r)
+#
+#     return N
 
-    if r > 0:
-        if tau[i+d+1] > tau[i+1]:
-            f1 = d / (tau[i+d+1] - tau[i+1])
-        else:
-            f1 = 0
-
-        if tau[i+d+2] > tau[i+2]:
-            f2 = d / (tau[i+d+2] - tau[i+2])
-        else:
-            f2 = 0
-        N = f1*NVal(tau, t, i, d-1, r-1) - f2*NVal(tau, t, i+1, d-1, r-1)
-        return N
-
-    if d == 0:
-        if t >= tau[i+1] and t < tau[i+2]:
-            N = 1
-        elif t >= tau[i+1] and t <= tau[i+2] and tau[i+1] < tau[i+2] and tau[i+2] == tau[len(tau) - 1]:
-            N = 1
-        else:
-            N = 0
-        return N
-
-    if tau[i+d+1] > tau[i+1]:
-        f1 = (t - tau[i+1]) / (tau[i+d+1] - tau[i+1])
-    else:
-        f1 = 0
-
-    if tau[i+d+2] > tau[i+2]:
-        f2 = (tau[i+d+2] - t) / (tau[i+d+2] - tau[i+2])
-    else:
-        f2 = 0
-
-    N = f1*NVal(tau, t, i, d-1, r) + f2*NVal(tau, t, i+1, d-1, r)
-
-    return N
-
+# Python wrapper for B-spline basis function implemented in C
+def NVal(tau, t, i, d, numKnots, r):
+    return dll.NVal(tau, t, i, d, numKnots, r)
 
 # This function evaluates the B-Spline series at points in the vector t
 def BSVal(b, tau, t, r):
@@ -161,10 +170,17 @@ def BSVal(b, tau, t, r):
     n = len(b[1]) - 1
     d = m - n - 1
 
+    # convert knot array into appropriate C-type representation
+    numKnots = len(tau)
+    c_float_p = POINTER(c_float)
+    tau = tau.astype(np.float32)
+    tau_c = tau.ctypes.data_as(c_float_p)
+
     x = np.zeros((len(b), len(t)))
     for i in range(len(t)):
         for j in range(-1, n):
-            x[:, i] += b[:, j+1] * NVal(tau, t[i], j, d, r)
+            t_c = c_float(t[i])
+            x[:, i] += b[:, j+1] * NVal(tau_c, t_c, j, d, numKnots, r)
 
     return x
 
@@ -182,7 +198,7 @@ def generateTubeData(numPointsPerSlice, numSlices, r):
 
     return X, Y, Z
 
-def parameterizeTube(X, Y, Z, tauU, tauV, degree):
+def parameterizeTube(X, Y, Z, tauU, tauV, degreeU, degreeV):
 
     # get number of slices/points
     numSlices, numPointsPerContour = np.shape(X)
@@ -190,8 +206,8 @@ def parameterizeTube(X, Y, Z, tauU, tauV, degree):
     # try doing V by taking Z distances
     # each column of V will be the same
     # scale a column of Z to parameter range
-    firstKnotV = tauV[degree]
-    lastKnotV = tauV[-degree-1]
+    firstKnotV = tauV[degreeV]
+    lastKnotV = tauV[-degreeV-1]
     vRange = lastKnotV - firstKnotV
     zRange = Z[-1, 0] - Z[0, 0]
     zVect = Z[:, 0]
@@ -202,8 +218,8 @@ def parameterizeTube(X, Y, Z, tauU, tauV, degree):
     # now figure out what U will be. Use same for each row because
     # we've already sampled along contours uniformly.
     # each row will be uniform in valid parameter support
-    firstKnotU = tauU[degree]
-    lastKnotU = tauU[-degree-1]
+    firstKnotU = tauU[degreeU]
+    lastKnotU = tauU[-degreeU-1]
     uVect = np.linspace(firstKnotU, lastKnotU, numPointsPerContour)
 
     # compute U and V with meshgrid since row/column dimensions are the same
@@ -224,7 +240,7 @@ def parameterizeFat(X, Y, Z, tauU, tauV, degree):
     return U, V
 
 
-def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=None):
+def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degreeU, degreeV, U, V, progressBar=None):
 
     numParamPointsV, numParamPointsU = np.shape(U)
     numControlPointsV, numControlPointsU = np.shape(Vx)
@@ -236,6 +252,15 @@ def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=None
     Y = np.zeros((numParamPointsV, numParamPointsU))
     Z = np.zeros((numParamPointsV, numParamPointsU))
 
+    # get appropriate C-type representations for each knot vector
+    c_float_p = POINTER(c_float)
+    numKnotsU = len(tauU)
+    tauU = tauU.astype(np.float32)
+    tauU_c = tauU.ctypes.data_as(c_float_p)
+    numKnotsV = len(tauV)
+    tauV = tauV.astype(np.float32)
+    tauV_c = tauV.ctypes.data_as(c_float_p)
+
     for m in range(numParamPointsV):
         for n in range(numParamPointsU):
 
@@ -243,9 +268,14 @@ def EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=None
             sumy = 0
             sumz = 0
 
+            # get C float representation for each parameter value
+            u_c = c_float(U[m, n])
+            v_c = c_float(V[m, n])
+
             for j in range(numControlPointsV):
                 for i in range(numControlPointsU):
-                    tProduct = NVal(tauU, U[m, n], i-1, degree, 0) * NVal(tauV, V[m, n], j-1, degree, 0)
+                    tProduct = NVal(tauU_c, u_c, i-1, degreeU, numKnotsU, 0) * NVal(tauV_c, v_c, j-1, degreeV,
+                                                                                    numKnotsV, 0)
                     sumx += Vx[j, i] * tProduct
                     sumy += Vy[j, i] * tProduct
                     sumz += Vz[j, i] * tProduct
@@ -287,11 +317,11 @@ def readSlicePoints(baseName, startFrame, stopFrame, zSpacing):
     for i in range(numSlices):
         filePath = baseName + str(startFrame + i) + '.txt'
         sliceFile = open(filePath, 'r')
-        X[i, 0:numPointsPerContour[i]] = np.loadtxt(sliceFile, dtype=int, usecols=0)
+        X[i, 0:numPointsPerContour[i]] = np.loadtxt(sliceFile, dtype=float, usecols=0)
         # for some reason loadtxt won't work twice in a row unless the file is closed and reopened
         sliceFile.close()
         sliceFile = open(filePath, 'r')
-        Y[i, 0:numPointsPerContour[i]] = np.loadtxt(sliceFile, dtype=int, usecols=1)
+        Y[i, 0:numPointsPerContour[i]] = np.loadtxt(sliceFile, dtype=float, usecols=1)
         sliceFile.close()
         # for now, just evenly space the slices along the z-axis. Can figure out the conversion from the 1cm
         # gap between slices in reality and the coordinate space in which the splines are visualized later
@@ -300,6 +330,7 @@ def readSlicePoints(baseName, startFrame, stopFrame, zSpacing):
     return X, Y, Z, numPointsPerContour
 
 def fitSplineClosed2D(points, numControlPoints, degree):
+
     # perform angular reordering of points
     orderedPoints = reOrder(points)
 
@@ -324,11 +355,17 @@ def fitSplineClosed2D(points, numControlPoints, degree):
     t = parameterizeClosedCurve(orderedPoints, tau, degree)
 
     p_mat = np.transpose(orderedPoints)
-    A_mat = np.zeros((numDataPoints, numCalcControlPoints))
+    A_mat = np.zeros((numDataPoints, numCalcControlPoints), dtype=np.float)
+
+    # convert knot array into appropriate C-type representation
+    c_float_p = POINTER(c_float)
+    tau = tau.astype(np.float32)
+    tau_c = tau.ctypes.data_as(c_float_p)
 
     for j in range(numDataPoints):
         for k in range(numCalcControlPoints):
-            A_mat[j][k] = NVal(tau, t[j], k - 1, degree, 0)
+            t_c = c_float(t[j])
+            A_mat[j, k] = NVal(tau_c, t_c, k-1, degree, numKnots, 0)
 
     # create a constrained A matrix
     A_mat_con = A_mat
@@ -383,9 +420,14 @@ def fitSplineRightMyo2D(points, numControlPoints, degree):
 
     A_mat = np.zeros((numDataPoints, numCalcControlPoints))
 
+    c_float_p = POINTER(c_float)
+    tau = tau.astype(np.float32)
+    tau_c = tau.ctypes.data_as(c_float_p)
+
     for j in range(numDataPoints):
         for k in range(numCalcControlPoints):
-            A_mat[j][k] = NVal(tau, t[j], k - 1, degree, 0)
+            t_c = c_float(t[j])
+            A_mat[j][k] = NVal(tau_c, t_c, k - 1, degree, numKnots, 0)
 
     # create a constrained A matrix
     A_mat_con = A_mat
@@ -591,7 +633,7 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     # generate X and Y indices at which fat measurements should take place. This looks a little different for this
     # function because the slice loop begins at -1 to accommodate
     scaleFactor = X.shape[0] / numSlices
-    indices = np.floor(np.arange(0, X.shape[0], scaleFactor)).astype(int)
+    indices = np.floor(np.arange(0, X.shape[0]-1, scaleFactor)).astype(int)
     for i in range(-1, numSlices - 1):
         index = indices[i]
         for j in range(numPointsPerContour):
@@ -616,7 +658,47 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
 
             thicknessByPoint[i, j] = thickness
 
-    return thicknessByPoint, xFatPoints, yFatPoints
+    return thicknessByPoint, xFatPoints, yFatPoints, indices
+
+def altFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPerContour, fatPointsPerSlice):
+    # TODO some mechanism to account for the "amount" of each point that the vector passes through. Since each fat point
+    # represents a voxel, the vector passing through the corner of a voxel vs directly through will contribute unevenly
+    # to the overall thickness. Maybe do first check and then use magnitude of distance to scale the contribution to the
+    # overall thickness by that pixel
+    thicknessByPoint = np.zeros((numSlices, numPointsPerContour))
+    fatPointsX = np.zeros((numSlices, numPointsPerContour))
+    fatPointsY = np.zeros((numSlices, numPointsPerContour))
+
+    # generate X and Y indices at which fat measurements should take place. This looks a little different for this
+    # function because the slice loop begins at -1 to accommodate
+    scaleFactor = X.shape[0] / numSlices
+    indices = np.floor(np.arange(0, X.shape[0]-1, scaleFactor)).astype(int)
+    for i in range(-1, numSlices - 1):
+        index = indices[i]
+        for j in range(numPointsPerContour):
+            # generate a point arbitrarily far along the normal vector
+            xDir = X[index, j] + (200 * crossX[index, j])
+            yDir = Y[index, j] + (200 * crossY[index, j])
+            thickness = 0
+            # check each fat point for proximity to the line defined by normal vector
+            for k in range(fatPointsPerSlice[i]):
+
+                ab = np.sqrt((xDir - X[index, j]) ** 2 + (yDir - Y[index, j]) ** 2)
+                ac = np.sqrt((xDir - fatX[i, k]) ** 2 + (yDir - fatY[i, k]) ** 2)
+                bc = np.sqrt((X[index, j] - fatX[i, k]) ** 2 + (Y[index, j] - fatY[i, k]) ** 2)
+
+                is_on_segment = abs(ac + bc - ab) < 0.02
+
+                # update thickness measure if a point is found to be sufficiently close
+                if is_on_segment:
+                    if bc > thickness:
+                        thickness = bc
+                        fatPointsX[i, j] = fatX[i, k]
+                        fatPointsY[i, j] = fatY[i, k]
+
+            thicknessByPoint[i, j] = thickness
+
+    return thicknessByPoint, fatPointsX, fatPointsY, indices
 
 def generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, threshold):
 
@@ -629,17 +711,13 @@ def generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, thres
     fatPointsY = np.zeros(2 * fLength)
     fatPointsZ = np.zeros(2 * fLength)
 
-    # Since the fat thickness can be likened to the diagonal of a square, the x and y components must each be divided
-    # by a factor of sqrt(2) for the fat point location to accurately reflect the magnitude of the thickness
-    scaleFactor = 1 / np.sqrt(2)
-
     index = 0
     for i in range(numU):
         for j in range(numV):
             if fatThicknessZ[i, j] > threshold:
                 # calculate point location along normal vector based on fat thickness at that point
-                thisX = X[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossX[i, j])
-                thisY = Y[i, j] + (scaleFactor * fatThicknessZ[i, j] * crossY[i, j])
+                thisX = X[i, j] + (fatThicknessZ[i, j] * crossX[i, j])
+                thisY = Y[i, j] + (fatThicknessZ[i, j] * crossY[i, j])
                 thisZ = Z[i, j]
 
                 fatPointsX[index] = thisX
@@ -660,17 +738,12 @@ def generateFatSurfacePoints(X, Y, Z, U, V, crossX, crossY, fatThicknessZ, thres
 
     # create polydata from points and perform a triangulation on them
     data = np.column_stack((fatPointsX, fatPointsY, fatPointsZ))
-    polydata = pv.PolyData(data)
-    pp = polydata.delaunay_3d(alpha=3.0, tol=0.005)
-    # delaunay routine returns an unstructured grid, so convert back to polydata
-    surf = pp.extract_surface()
+    data = pv.wrap(data)
+    pp = data.reconstruct_surface()
 
-    return surf
+    return pp
 
 def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
-
-    # define the scale factor that will determine where fat-points are located in 3D space
-    scaleFactor = 1 / np.sqrt(2)
 
     # get the shape of the input parameterization
     numU, numV = fatThicknessZ.shape
@@ -716,8 +789,8 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
             # outside fat contour is comprised of fat points whose distance from the myocardium is defined by
             # the parameterized fat thickness map
-            fatPointsOutside[:, 0] = X[i, :] + (scaleFactor * thisSlice * crossX[i, :])
-            fatPointsOutside[:, 1] = Y[i, :] + (scaleFactor * thisSlice * crossY[i, :])
+            fatPointsOutside[:, 0] = X[i, :] + (thisSlice * crossX[i, :])
+            fatPointsOutside[:, 1] = Y[i, :] + (thisSlice * crossY[i, :])
             fatPointsOutside[:, 2] = Z[i, :]
 
             # append outside to fat arrays
@@ -757,8 +830,8 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
                 # generate a fat surface point by traveling along the direction of the normal vector in accordance
                 # with the magnitude of fat thickness at the current parameter location
-                thisX = X[i, region] + (scaleFactor * thisSlice[region] * crossX[i, region])
-                thisY = Y[i, region] + (scaleFactor * thisSlice[region] * crossY[i, region])
+                thisX = X[i, region] + (thisSlice[region] * crossX[i, region])
+                thisY = Y[i, region] + (thisSlice[region] * crossY[i, region])
 
                 # add fat points to list
                 fatPointsThisRegion[0:lenRegion] = np.column_stack((np.squeeze(thisX), np.squeeze(thisY)))
@@ -872,6 +945,17 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
         _, indices = np.unique(new, return_index=True, axis=0)
         new = new[np.sort(indices)]
         newLines.append(new)
+
+    # p = pv.Plotter()
+    # for ll in linesAround:
+    #     ll = np.ravel(ll).astype(int)
+    #     p.add_lines(threeDPoints[ll], color='red')
+    #     p.show(interactive_update=True)
+    #
+    # for ll in newLines:
+    #     ll = np.ravel(ll).astype(int)
+    #     p.add_lines(threeDPoints[ll], color='blue')
+    #     p.show(interactive_update=True)
 
     # concatenate the line lists into a single numpy array containing every line
     flatLines = np.concatenate(newLines)
@@ -988,49 +1072,56 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
 # This is the primary spline fitting routine, used to generate the spline surface which is open on the top and bottom,
 # but closed "around" the heart
-def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV, degree, numPointsPerContour,
-                      numSlices, fix_samples=False, progressBar=None):
-    numCalcControlPointsU = numControlPointsU + degree
+def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPointsV, degreeU, degreeV,
+                      numPointsPerContour, numSlices, fix_samples=False, progressBar=None):
+
+    numCalcControlPointsU = numControlPointsU + degreeU
     m = numControlPointsU - 1
     n = numControlPointsV - 1
     M = numPointsPerContour - 1
     N = numSlices - 1
 
     # Figure out what set of two knots will be for u parameter direction (around each contour)
-    numKnotsU = m + 2 * degree + 2
+    numKnotsU = m + 2 * degreeU + 2
     tauU = np.zeros(numKnotsU)
-    numOpenKnotsU = m + degree + 1
+    numOpenKnotsU = m + degreeU + 1
     tauU[0:numOpenKnotsU] = np.linspace(0, 1, numOpenKnotsU)
-    for i in range(degree + 1):
+    for i in range(degreeU + 1):
         diff = tauU[i + 1] - tauU[i]
         tauU[numOpenKnotsU + i] = tauU[numOpenKnotsU + i - 1] + diff
 
-    numKnotsV = n + degree + 2
-    numInteriorKnotsV = numKnotsV - 2 * degree
+    numKnotsV = n + degreeV + 2
+    numInteriorKnotsV = numKnotsV - 2 * degreeV
     tauV = np.zeros(numKnotsV)
-    tauV[degree:numInteriorKnotsV + degree] = np.linspace(0, 1, numInteriorKnotsV)
-    tauV[numInteriorKnotsV + degree:numKnotsV] = np.ones(degree)
+    tauV[degreeV:numInteriorKnotsV + degreeV] = np.linspace(0, 1, numInteriorKnotsV)
+    tauV[numInteriorKnotsV + degreeV:numKnotsV] = np.ones(degreeV)
 
     # set up parameterization
     U, V, firstKnotU, lastKnotU, firstKnotV, lastKnotV = parameterizeTube(resampX, resampY, resampZ,
-                                                                                      tauU, tauV, degree)
+                                                                          tauU, tauV, degreeU, degreeV)
 
     # now we need to set up matrices to solve for mesh of control points
     # (B*V*T^T = P)
 
     # set up B matrix
     B = np.zeros((M + 1, numCalcControlPointsU))
+
+    c_float_p = POINTER(c_float)
+    tauU = tauU.astype(np.float32)
+    tauU_c = tauU.ctypes.data_as(c_float_p)
     for r in range(M + 1):
         for i in range(numCalcControlPointsU):
-            uVal = U[0, r]
-            B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
+            uVal = c_float(U[0, r])
+            B[r, i] = NVal(tauU_c, uVal, i - 1, degreeU, numKnotsU, 0)
 
+    tauV = tauV.astype(np.float32)
+    tauV_c = tauV.ctypes.data_as(c_float_p)
     # set up C matrix
     C = np.zeros((N + 1, n + 1))
     for s in range(N + 1):
         for j in range(n + 1):
-            vVal = V[s, 0]
-            C[s, j] = NVal(tauV, vVal, j - 1, degree, 0)
+            vVal = c_float(V[s, 0])
+            C[s, j] = NVal(tauV_c, vVal, j - 1, degreeV, numKnotsV, 0)
 
     # now set up Px, Py, and Pz matrices
     Px = np.transpose(resampX)
@@ -1040,7 +1131,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     # constrain the B matrix so last three control points of each slice
     # equal the first three (for cubic)
     B_con = B
-    B_con[:, 0:degree] = B_con[:, 0:degree] + B_con[:, numCalcControlPointsU - degree:numCalcControlPointsU]
+    B_con[:, 0:degreeU] = B_con[:, 0:degreeU] + B_con[:, numCalcControlPointsU - degreeU:numCalcControlPointsU]
     B_con = B_con[:, 0:numControlPointsU]
 
     # calculate pseudo-inverses of B_con and C for use in generating control points
@@ -1066,9 +1157,9 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     newVy[:, 0:numControlPointsU] = Vy
     newVz[:, 0:numControlPointsU] = Vz
 
-    newVx[:, numControlPointsU:numCalcControlPointsU] = Vx[:, 0:degree]
-    newVy[:, numControlPointsU:numCalcControlPointsU] = Vy[:, 0:degree]
-    newVz[:, numControlPointsU:numCalcControlPointsU] = Vz[:, 0:degree]
+    newVx[:, numControlPointsU:numCalcControlPointsU] = Vx[:, 0:degreeU]
+    newVy[:, numControlPointsU:numCalcControlPointsU] = Vy[:, 0:degreeU]
+    newVz[:, numControlPointsU:numCalcControlPointsU] = Vz[:, 0:degreeU]
 
     Vx = newVx
     Vy = newVy
@@ -1078,8 +1169,8 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
     if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, 100)
-        vVect = np.linspace(0, 1, 100)
+        uVect = np.linspace(uMin, uMax, 200)
+        vVect = np.linspace(0, 1, 200)
         U, V = np.meshgrid(uVect, vVect)
 
     # generate triangles for use in VTK models
@@ -1087,7 +1178,7 @@ def fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU, numControlPo
 
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
-    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=progressBar)
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degreeU, degreeV, U, V, progressBar=progressBar)
     stopTime = time.perf_counter()
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 
@@ -1112,28 +1203,28 @@ def createVTKModel(X, Y, Z, triangles, filePath):
     surf = pv.PolyData(verts, faces)
     surf.save(filePath, binary=False)
 
-def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_samples=False, progressBar=None):
+def mountainPlot(x, y, thickness, degreeU, degreeV, numSlices, numPointsPerContour, fix_samples=False, progressBar=None):
 
     # set up parameters for spline fit
-    numControlPointsU = degree + 1
-    numControlPointsV = degree
+    numControlPointsU = degreeU + 20
+    numControlPointsV = degreeV + 10
     m = numControlPointsU - 1
     n = numControlPointsV - 1
-    numCalcControlPointsU = numControlPointsU + degree
-    numCalcControlPointsV = numControlPointsV + degree
+    numCalcControlPointsU = numControlPointsU + degreeU
+    numCalcControlPointsV = numControlPointsV + degreeV
 
     # generate the knots (numKnots = n + 2d + 2)
-    numKnotsU = m + (2*degree) + 2
+    numKnotsU = m + (2 * degreeU) + 2
     tauU = np.zeros(numKnotsU)
-    numOpenKnotsU = numKnotsU - (2*degree)
-    tauU[degree:-degree] = np.linspace(0, 1, numOpenKnotsU)
-    tauU[-degree:] = 1
+    numOpenKnotsU = numKnotsU - (2*degreeU)
+    tauU[degreeU:-degreeU] = np.linspace(0, 1, numOpenKnotsU)
+    tauU[-degreeU:] = 1
 
-    numKnotsV = n + 2 * degree + 2
+    numKnotsV = n + (2 * degreeV) + 2
     tauV = np.zeros(numKnotsV)
-    numOpenKnotsV = numKnotsV - (2*degree)
-    tauV[degree:-degree] = np.linspace(0, 1, numOpenKnotsV)
-    tauV[-degree:] = 1
+    numOpenKnotsV = numKnotsV - (2*degreeV)
+    tauV[degreeV:-degreeV] = np.linspace(0, 1, numOpenKnotsV)
+    tauV[-degreeV:] = 1
 
     # set up parameterization
     uVect = np.linspace(0, 1, numPointsPerContour)
@@ -1144,17 +1235,23 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_sa
     # (B*V*T^T = P)
 
     B = np.zeros((numPointsPerContour, numCalcControlPointsU))
+
+    c_float_p = POINTER(c_float)
+    tauU = tauU.astype(np.float32)
+    tauU_c = tauU.ctypes.data_as(c_float_p)
     for r in range(numPointsPerContour):
         for i in range(numCalcControlPointsU):
-            uVal = U[0, r]
-            B[r, i] = NVal(tauU, uVal, i - 1, degree, 0)
+            uVal = c_float(U[0, r])
+            B[r, i] = NVal(tauU_c, uVal, i - 1, degreeU, numKnotsU, 0)
 
     # set up C matrix
     C = np.zeros((numSlices, numCalcControlPointsV))
+    tauV = tauV.astype(np.float32)
+    tauV_c = tauV.ctypes.data_as(c_float_p)
     for s in range(numSlices):
         for j in range(numCalcControlPointsV):
-            vVal = V[s, 0]
-            C[s, j] = NVal(tauV, vVal, j-1, degree, 0)
+            vVal = c_float(V[s, 0])
+            C[s, j] = NVal(tauV_c, vVal, j-1, degreeV, numKnotsV, 0)
 
     # now set up Px, Py, and Pz matrices
     Px = np.transpose(x)
@@ -1179,15 +1276,15 @@ def mountainPlot(x, y, thickness, degree, numSlices, numPointsPerContour, fix_sa
     if fix_samples:
         uMin = np.min(U)
         uMax = np.max(U)
-        uVect = np.linspace(uMin, uMax, 100)
-        vVect = np.linspace(0, 1, 100)
+        uVect = np.linspace(uMin, uMax, 200)
+        vVect = np.linspace(0, 1, 200)
         U, V = np.meshgrid(uVect, vVect)
 
     tri = mtra.Triangulation(np.ravel(U), np.ravel(V))
 
     # evaluate tensor product to get surface points. Operation is timed because it tends to be the slowest step
     startTime = time.perf_counter()
-    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degree, U, V, progressBar=progressBar)
+    X, Y, Z = EvaluateTensorProduct(Vx, Vy, Vz, tauU, tauV, degreeU, degreeV, U, V, progressBar=progressBar)
     stopTime = time.perf_counter()
     print("Tensor product evaluation took {} seconds".format(stopTime - startTime))
 

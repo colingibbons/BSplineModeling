@@ -13,98 +13,104 @@ import matplotlib.pyplot as plt
 import splineTools
 
 # define parameters for reading from file (hardcoded for now, but should be easy to integrate into PATS)
-fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
-fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
-rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
-leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
-vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
+# fileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/colin/Desktop/school docs/Research/3D-MRI-Files/306-POST/vtkModels/'
 
-# fileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/309-POST/ES/vtkModels/'
+# fileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/MF0310-POST/ES/outsidePoints/combined_slice_'
+# fatName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/MF0310-POST/ES/outsidePoints/fat_slice_'
+# rightFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/MF0310-POST/ES/outsidePoints/right_slice_'
+# leftFileName = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/MF0310-POST/ES/outsidePoints/left_slice_'
+# vtkPath = 'C:/Users/cogibbo/Desktop/538 Project Files/Cases/MF0310-POST/ES/vtkModels/'
 
-# fileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/combined_slice_'
-# fatName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/fat_slice_'
-# rightFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/right_slice_'
-# leftFileName = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/outsidePoints/left_slice_'
-# vtkPath = 'C:/Users/cogibbo/Desktop/3D-MRI-Data/306-POST/vtkModels/'
+# fileName = 'C:\\Users\\cogibbo\\Desktop\\3D-MRI-Data\\303-POST\\outsidePoints\\combined_slice_'
+# fatName = 'C:\\Users\cogibbo\\Desktop\\3D-MRI-Data\\303-POST\\outsidePoints\\fat_slice_'
+# rightFileName = 'C:\\Users\\cogibbo\Desktop\\3D-MRI-Data\\303-POST\\outsidePoints\\right_slice_'
+# leftFileName = 'C:\\Users\\cogibbo\\Desktop\\3D-MRI-Data\\303-POST\\outsidePoints\\left_slice_'
 
-startFrame = 3
-stopFrame = 8
+fileName = 'C:\\Users\\cogibbo\Desktop\\538 Project Files\\Cases\\MF0303-POST\\ED\\outsidePoints\\combined_slice_'
+fatName = 'C:\\Users\\cogibbo\Desktop\\538 Project Files\\Cases\\MF0303-POST\\ED\\outsidePoints\\fat_slice_'
+rightFileName = 'C:\\Users\\cogibbo\Desktop\\538 Project Files\\Cases\\MF0303-POST\\ED\\outsidePoints\\right_slice_'
+leftFileName = 'C:\\Users\\cogibbo\Desktop\\538 Project Files\\Cases\\MF0303-POST\\ED\\outsidePoints\\left_slice_'
+vtkPath = 'C:\\Users\\cogibbo\\Desktop\\538 Project Files\\Cases\\MF0303-POST\\ED\\vtkModels\\'
+
+startFrame = 1
+stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
 
 #######################################################################################################################
-resampleNumControlPoints = 6
-degree = 3
-numControlPointsU = numSlices + degree
-numControlPointsV = numSlices
-
-origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame, 10)
-
-resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-    splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-
-
-resampleNumControlPoints = 10
-degree = 7
-rx, ry, rz, _, _, _, _, _ = splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour,
-                                                                  resampleNumControlPoints, degree)
-degree = 3
-
+# resampleNumControlPoints = 6
+# degree = 3
+# numControlPointsU = numSlices + degree
+# numControlPointsV = numSlices
+#
+# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame, 10)
+#
+# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+#     splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+#
+#
+# resampleNumControlPoints = 30
+# degree = 3
+# rx, ry, rz, _, _, _, _, _ = splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour,
+#                                                                   resampleNumControlPoints, degree)
+# degree = 3
+#
 # for s in range(len(rx)):
 #     fig = plt.figure()
-#     plt.scatter(resampX[s, :], resampY[s, :], c='red')
+#     # plt.scatter(resampX[s, :], resampY[s, :], c='red')
 #     plt.scatter(origX[s, :], origY[s, :], c='green')
-#     # plt.scatter(rx[s, :], ry[s, :], c='blue')
+#     plt.scatter(rx[s, :], ry[s, :], c='blue')
 #     plt.show()
-
-rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
-                                                                            numControlPointsU, numControlPointsV,
-                                                                            degree, numPointsPerContour,
-                                                                            numSlices, fix_samples=True)
-
-# perform spline routine for left side
-# read in points from files
-origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame, 10)
-
-# resample the data so each slice has the same number of points
-# do this by fitting each slice with B-spline curve
-resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-    splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-
-
-leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                                         numControlPointsV, degree, numPointsPerContour,
-                                                                         numSlices, fix_samples=True)
-
-rxx = np.ravel(rightX)
-ryy = np.ravel(rightY)
-rzz = np.ravel(rightZ)
-
-rpts = np.column_stack((rxx, ryy, rzz))
-
-rtris = rTri.triangles
-threes = np.full((len(rtris), 1), 3)
-rtris = np.concatenate((threes, rtris), axis=1)
-
-lxx = np.ravel(leftX)
-lyy = np.ravel(leftY)
-lzz = np.ravel(leftZ)
-
-lpts = np.column_stack((lxx, lyy, lzz))
-
-ltris = lTri.triangles
-threes = np.full((len(ltris), 1), 3)
-ltris = np.concatenate((threes, ltris), axis=1)
-
-lPoly = pv.PolyData(lpts, ltris)
-rPoly = pv.PolyData(rpts, rtris)
-p = pv.Plotter()
-p.add_mesh(lPoly, color='blue')
-p.add_mesh(rPoly, color='red')
-p.show()
+#
+# rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
+#                                                                             numControlPointsU, numControlPointsV,
+#                                                                             degreeU, degreeV, numPointsPerContour,
+#                                                                             numSlices, fix_samples=True)
+#
+# # perform spline routine for left side
+# # read in points from files
+# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame, 10)
+#
+# # resample the data so each slice has the same number of points
+# # do this by fitting each slice with B-spline curve
+# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
+#     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
+#
+#
+# leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
+#                                                                          numControlPointsV, degreeU, degreeV,
+#                                                                          numPointsPerContour, numSlices,
+#                                                                          fix_samples=True)
+#
+# rxx = np.ravel(rightX)
+# ryy = np.ravel(rightY)
+# rzz = np.ravel(rightZ)
+#
+# rpts = np.column_stack((rxx, ryy, rzz))
+#
+# rtris = rTri.triangles
+# threes = np.full((len(rtris), 1), 3)
+# rtris = np.concatenate((threes, rtris), axis=1)
+#
+# lxx = np.ravel(leftX)
+# lyy = np.ravel(leftY)
+# lzz = np.ravel(leftZ)
+#
+# lpts = np.column_stack((lxx, lyy, lzz))
+#
+# ltris = lTri.triangles
+# threes = np.full((len(ltris), 1), 3)
+# ltris = np.concatenate((threes, ltris), axis=1)
+#
+# lPoly = pv.PolyData(lpts, ltris)
+# rPoly = pv.PolyData(rpts, rtris)
+# p = pv.Plotter()
+# p.add_mesh(lPoly, color='blue')
+# p.add_mesh(rPoly, color='red')
+# p.show()
 
 
 #######################################################################################################################
@@ -114,8 +120,8 @@ origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(fileName
 
 # resample the data so each slice has the same number of points
 # do this by fitting each slice with B-spline curve
-resampleNumControlPoints = 10
-degree = 7
+resampleNumControlPoints = 20
+degree = 12
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 
@@ -153,18 +159,32 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 # ax = fig.gca(projection='3d')
 # for i in range(numSlices):
 #     ax.plot(resampX[i, :], resampY[i, :], resampZ[i, :])
+# plt.title(f'Uniformly sampled slice contours, degree={degree}')
 # plt.show()
 
+degree = 3
 # set up parameters for spline fit
 numControlPointsU = numSlices + degree
 numControlPointsV = numSlices
-degree = 3
+degreeU = 10
+degreeV = 3
 numCalcControlPointsU = numControlPointsU + degree
 
 # call function to perform outside point spline fitting
 X, Y, Z, Vx, Vy, Vz, U, V, tri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                               numControlPointsV, degree, numPointsPerContour,
+                                                               numControlPointsV, degreeU, degreeV, numPointsPerContour,
                                                                numSlices, fix_samples=True)
+
+# num = np.full((len(tri.triangles), 1), 3)
+# tris = np.concatenate((num, tri.triangles), axis=1).astype(int)
+#
+# threeDPoints = np.column_stack((np.ravel(X), np.ravel(Y), np.ravel(Z)))
+#
+# # plot the resulting polydata
+# poly = pv.PolyData(threeDPoints, tris)
+# p = pv.Plotter()
+# p.add_mesh(poly, color='red')
+# p.show()
 
 # update number of points per contour in case resampling was applied
 numPointsPerContour = X.shape[1]
@@ -232,7 +252,7 @@ elevation = 15
 # # now that all subplots have been generated, display them on a single figure
 # plt.show()
 
-# ########################################################################################################################
+# ######################################################################################################################
 # # plot control points and the surface on the same plot
 # fig = plt.figure()
 # ax = fig.gca(projection='3d')
@@ -252,51 +272,56 @@ elevation = 15
 # # add vertical connections
 # for i in range(numCalcControlPointsU):
 #     ax.plot(Vx[0:numControlPointsV, i], Vy[0:numControlPointsV, i], Vz[0:numControlPointsV, i], 'r')
-
-# plot the surface
+#
+# # plot the surface
 # ax.plot_surface(X, Y, Z)
 
 # read fat points from file and add them to the scene
 fatX, fatY, fatZ, numFatPointsPerSlice = splineTools.readSlicePoints(fatName, startFrame, stopFrame, 10)
 # ax.scatter(fatX, fatY, fatZ, marker='s', s=4, c='yellow')
-
+#
 # plt.show()
 
 # generate normal vectors
 crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z)
 
-# measure fat thickness at each normal vector
-thicknessByPoint, xFatPoints, yFatPoints = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
-                                                                           numPointsPerContour, numFatPointsPerSlice)
+# # measure fat thickness at each normal vector
+# thicknessByPoint, xFatPoints, yFatPoints, indices = splineTools.measureFatThickness(X, Y, crossX, crossY, fatX, fatY,
+#                                                                                     numSlices, numPointsPerContour,
+#                                                                                     numFatPointsPerSlice)
 
+thicknessByPoint, fatPointsX, fatPointsY, indices = splineTools.altFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
+                                                                                 numPointsPerContour, numFatPointsPerSlice)
 
-# # plot each normal vector one at a time along with the fat points associated with it
+for s in range(numSlices):
+    ind = indices[s]
+    fig = plt.figure()
+    plt.plot(X[ind, :], Y[ind, :], c='blue')
+    plt.scatter(fatX[s, :], fatY[s, :], c='yellow')
+    plt.scatter(fatPointsX[s, :], fatPointsY[s, :], c='black')
+    plt.show()
+
+# plot each normal vector one at a time along with the fat points associated with it
 # zz = np.linspace(np.min(Z), np.max(Z), numSlices)
 # zz = np.transpose(np.tile(zz, (numPointsPerContour, 1)))
 # scaleFactor = X.shape[0] / numSlices
+# indices = np.floor(np.arange(0, X.shape[0], scaleFactor)).astype(int)
 # for i in range(numSlices):
-#    count = 0
-#    index = np.floor(i*scaleFactor).astype(int)
-#    for j in range(numPointsPerContour - 1):
-#         x = xFatPoints[i, j, :]
-#         y = yFatPoints[i, j, :]
-#         z = fatZ[i]
-#         points = ax.scatter(xFatPoints[i, j, :], yFatPoints[i, j, :], fatZ[i], s=4, c='black')
-#         pointX = X[index, j] + 100*crossX[index, j]
-#         pointY = Y[index, j] + 100*crossY[index, j]
-#         pointZ = zz[i, j]
-#         points2 = ax.scatter(pointX, pointY, pointZ, marker='s', s=4, c='purple')
-#         vector = ax.quiver(X[index, j], Y[index, j], zz[i, j], crossX[index, j], crossY[index, j], crossZ[index, j],
-#                            length=10, color='purple', arrow_length_ratio=0.1)
-#         count += 1
-#         message = "Slice {}, Point {}: Fat thickness of {}".format(i, j, thicknessByPoint[i, j])
+#     index = indices[i]
+#     fig = plt.figure()
+#     plt.plot(X[index, :], Y[index, :], c='blue')
+#     plt.scatter(fatX[i, :], fatY[i, :], c='yellow')
+#     count = 0
+#     for j in range(numPointsPerContour - 1):
+#         vector = plt.quiver(X[index, j], Y[index, j], crossX[index, j], crossY[index, j], scale=10,
+#                             headwidth=0, color='black')
+#         thisVectorPoints = plt.scatter(xFatPoints[i, j, :], yFatPoints[i, j, :], c='black')
+#         message = f'Slice {i}, Point {j}: Fat thickness of {thicknessByPoint[i, j]} mm'
 #         plt.title(message)
 #         plt.draw()
 #         plt.pause(0.05)
-#         points.remove()
-#         points2.remove()
+#         thisVectorPoints.remove()
 #         vector.remove()
-#         print(count)
 
 # create arrays for appropriately spaced plots of fat thickness
 x = np.linspace(0, numSlices - 1, numSlices)
@@ -333,20 +358,36 @@ zStem = np.ravel(thicknessByPoint)
 # plt.ylabel('Elevation ({})'.format(numSlices))
 # plt.colorbar()
 
-thicknessByPoint2 = savgol_filter(thicknessByPoint, 99, 3)
+# might consider adjusting degree of this fit to see how it affects fidelity to input segmentations
+# wrap mode uses values from other side of array, which is what we want to see given that these thickness measurements
+# wrap around the surface of the heart
+#thicknessByPoint2 = savgol_filter(thicknessByPoint, 77, 10, mode='wrap')
 
-degree = 3
-mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint2, degree, numSlices, numPointsPerContour,
+degreeU = 10
+degreeV = 2
+mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degreeU, degreeV, numSlices, numPointsPerContour,
                                             fix_samples=True)
+
+for s in range(numSlices):
+    ind = indices[s]
+    thisX = X[ind, :] + (mZ[ind, :] * crossX[ind, :])
+    thisY = Y[ind, :] + (mZ[ind, :] * crossY[ind, :])
+
+    fig = plt.figure()
+    plt.plot(X[ind, :], Y[ind, :], c='blue')
+    plt.scatter(fatX[s, :], fatY[s, :], c='yellow')
+    plt.scatter(thisX, thisY, c='black')
+    plt.show()
+
 
 mxx = np.ravel(mX)
 myy = np.ravel(mY)
 mzz = np.ravel(mZ)
 mTris = mTri.triangles
 
-# threes = np.full((len(mTris), 1), 3)
-# mTris = np.concatenate((threes, mTris), axis=1)
-#
+threes = np.full((len(mTris), 1), 3)
+mTris = np.concatenate((threes, mTris), axis=1)
+
 # pts = np.column_stack((mxx, myy, mzz))
 # mountainPoly = pv.PolyData(pts, mTris)
 # p = pv.Plotter()
@@ -374,35 +415,14 @@ mTris = mTri.triangles
 
 # call the fat triangulation function to create a 3D fat surface from the mountain plot
 start = time.perf_counter()
-fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 2.5)
+fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1)
 stop = time.perf_counter()
 print(f'Fat surface generation took {stop-start} seconds')
-
-
-########################################################################################################################
-# # plot control points and the surface on the same plot
-# fig = plt.figure()
-# ax = fig.gca(projection='3d')
-# ax.set_title('Heart surface with fat deposits')
-# ax.view_init(elevation, azimuth)
-# ax.set_xlim(minX, maxX)
-# ax.set_ylim(minY, maxY)
-# ax.set_zlim(minZ, maxZ)
-#
-# # plot the myocardium surface
-# ax.plot_trisurf(np.ravel(X), np.ravel(Y), np.ravel(Z), triangles=tri.triangles, antialiased=True)
-#
-# # # plot the fat surfaces
-# # for k in range(len(fatDepositsX)):
-# #     ax.plot_trisurf(fatDepositsX[k], fatDepositsY[k], fatDepositsZ[k], triangles=fatDepositTris[k].triangles,
-# #                     antialiased=True, color='yellow')
-#
-# # show plot with fat surfaces
-# plt.show()
 
 ########################################################################################################################
 # perform spline routine for right side
 # read in points from files
+
 origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame, 10)
 
 resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
@@ -410,7 +430,7 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 
 rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
                                                                             numControlPointsU, numControlPointsV,
-                                                                            degree, numPointsPerContour,
+                                                                            degreeU, degreeV, numPointsPerContour,
                                                                             numSlices, fix_samples=True)
 
 # perform spline routine for left side
@@ -423,7 +443,7 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
 
 leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-                                                                         numControlPointsV, degree, numPointsPerContour,
+                                                                         numControlPointsV, degreeU, degreeV, numPointsPerContour,
                                                                          numSlices, fix_samples=True)
 
 ########################################################################################################################
