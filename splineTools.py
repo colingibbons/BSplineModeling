@@ -633,7 +633,8 @@ def measureFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPe
     # generate X and Y indices at which fat measurements should take place. This looks a little different for this
     # function because the slice loop begins at -1 to accommodate
     scaleFactor = X.shape[0] / numSlices
-    indices = np.floor(np.arange(0, X.shape[0]-1, scaleFactor)).astype(int)
+    #indices = np.floor(np.arange(0, X.shape[0], scaleFactor)).astype(int)
+    indices = np.linspace(0, X.shape[0], numSlices, dtype=int)
     for i in range(-1, numSlices - 1):
         index = indices[i]
         for j in range(numPointsPerContour):
@@ -672,7 +673,8 @@ def altFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPerCon
     # generate X and Y indices at which fat measurements should take place. This looks a little different for this
     # function because the slice loop begins at -1 to accommodate
     scaleFactor = X.shape[0] / numSlices
-    indices = np.floor(np.arange(0, X.shape[0]-1, scaleFactor)).astype(int)
+    #indices = np.floor(np.arange(0, X.shape[0]-1, scaleFactor)).astype(int)
+    indices = np.linspace(0, X.shape[0]-1, numSlices, dtype=int)
     for i in range(-1, numSlices - 1):
         index = indices[i]
         for j in range(numPointsPerContour):
@@ -687,7 +689,7 @@ def altFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices, numPointsPerCon
                 ac = np.sqrt((xDir - fatX[i, k]) ** 2 + (yDir - fatY[i, k]) ** 2)
                 bc = np.sqrt((X[index, j] - fatX[i, k]) ** 2 + (Y[index, j] - fatY[i, k]) ** 2)
 
-                is_on_segment = abs(ac + bc - ab) < 0.02
+                is_on_segment = abs(ac + bc - ab) < 0.1
 
                 # update thickness measure if a point is found to be sufficiently close
                 if is_on_segment:
@@ -1064,9 +1066,9 @@ def fatTriangulation(X, Y, Z, crossX, crossY, fatThicknessZ, threshold):
 
     # plot the resulting polydata
     poly = pv.PolyData(threeDPoints, tris)
-    p = pv.Plotter()
-    p.add_mesh(poly, color='yellow')
-    p.show()
+    # p = pv.Plotter()
+    # p.add_mesh(poly, color='yellow')
+    # p.show()
 
     return poly
 

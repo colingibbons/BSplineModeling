@@ -6,6 +6,7 @@ import yaml
 import pyvista as pv
 import time
 from scipy.signal import savgol_filter
+from PIL import Image
 
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
@@ -39,79 +40,6 @@ vtkPath = 'C:\\Users\\cogibbo\\Desktop\\538 Project Files\\Cases\\MF0303-POST\\E
 startFrame = 1
 stopFrame = 7
 numSlices = (stopFrame - startFrame) + 1
-
-#######################################################################################################################
-# resampleNumControlPoints = 6
-# degree = 3
-# numControlPointsU = numSlices + degree
-# numControlPointsV = numSlices
-#
-# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(rightFileName, startFrame, stopFrame, 10)
-#
-# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-#     splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-#
-#
-# resampleNumControlPoints = 30
-# degree = 3
-# rx, ry, rz, _, _, _, _, _ = splineTools.reSampleAndSmoothRightMyo(origX, origY, origZ, numPointsEachContour,
-#                                                                   resampleNumControlPoints, degree)
-# degree = 3
-#
-# for s in range(len(rx)):
-#     fig = plt.figure()
-#     # plt.scatter(resampX[s, :], resampY[s, :], c='red')
-#     plt.scatter(origX[s, :], origY[s, :], c='green')
-#     plt.scatter(rx[s, :], ry[s, :], c='blue')
-#     plt.show()
-#
-# rightX, rightY, rightZ, _, _, _, _, _, rTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ,
-#                                                                             numControlPointsU, numControlPointsV,
-#                                                                             degreeU, degreeV, numPointsPerContour,
-#                                                                             numSlices, fix_samples=True)
-#
-# # perform spline routine for left side
-# # read in points from files
-# origX, origY, origZ, numPointsEachContour = splineTools.readSlicePoints(leftFileName, startFrame, stopFrame, 10)
-#
-# # resample the data so each slice has the same number of points
-# # do this by fitting each slice with B-spline curve
-# resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerContour, totalResampleError = \
-#     splineTools.reSampleAndSmoothPoints(origX, origY, origZ, numPointsEachContour, resampleNumControlPoints, degree)
-#
-#
-# leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
-#                                                                          numControlPointsV, degreeU, degreeV,
-#                                                                          numPointsPerContour, numSlices,
-#                                                                          fix_samples=True)
-#
-# rxx = np.ravel(rightX)
-# ryy = np.ravel(rightY)
-# rzz = np.ravel(rightZ)
-#
-# rpts = np.column_stack((rxx, ryy, rzz))
-#
-# rtris = rTri.triangles
-# threes = np.full((len(rtris), 1), 3)
-# rtris = np.concatenate((threes, rtris), axis=1)
-#
-# lxx = np.ravel(leftX)
-# lyy = np.ravel(leftY)
-# lzz = np.ravel(leftZ)
-#
-# lpts = np.column_stack((lxx, lyy, lzz))
-#
-# ltris = lTri.triangles
-# threes = np.full((len(ltris), 1), 3)
-# ltris = np.concatenate((threes, ltris), axis=1)
-#
-# lPoly = pv.PolyData(lpts, ltris)
-# rPoly = pv.PolyData(rpts, rtris)
-# p = pv.Plotter()
-# p.add_mesh(lPoly, color='blue')
-# p.add_mesh(rPoly, color='red')
-# p.show()
-
 
 #######################################################################################################################
 
@@ -174,17 +102,6 @@ numCalcControlPointsU = numControlPointsU + degree
 X, Y, Z, Vx, Vy, Vz, U, V, tri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
                                                                numControlPointsV, degreeU, degreeV, numPointsPerContour,
                                                                numSlices, fix_samples=True)
-
-# num = np.full((len(tri.triangles), 1), 3)
-# tris = np.concatenate((num, tri.triangles), axis=1).astype(int)
-#
-# threeDPoints = np.column_stack((np.ravel(X), np.ravel(Y), np.ravel(Z)))
-#
-# # plot the resulting polydata
-# poly = pv.PolyData(threeDPoints, tris)
-# p = pv.Plotter()
-# p.add_mesh(poly, color='red')
-# p.show()
 
 # update number of points per contour in case resampling was applied
 numPointsPerContour = X.shape[1]
@@ -293,13 +210,13 @@ crossX, crossY, crossZ = splineTools.generateNormalVectors(X, Y, Z)
 thicknessByPoint, fatPointsX, fatPointsY, indices = splineTools.altFatThickness(X, Y, crossX, crossY, fatX, fatY, numSlices,
                                                                                  numPointsPerContour, numFatPointsPerSlice)
 
-for s in range(numSlices):
-    ind = indices[s]
-    fig = plt.figure()
-    plt.plot(X[ind, :], Y[ind, :], c='blue')
-    plt.scatter(fatX[s, :], fatY[s, :], c='yellow')
-    plt.scatter(fatPointsX[s, :], fatPointsY[s, :], c='black')
-    plt.show()
+# for s in range(numSlices):
+#     ind = indices[s]
+#     fig = plt.figure()
+#     plt.plot(X[ind, :], Y[ind, :], c='blue')
+#     plt.scatter(fatX[s, :], fatY[s, :], c='yellow', marker='s', s=50)
+#     plt.scatter(fatPointsX[s, :], fatPointsY[s, :], c='black')
+#     plt.show()
 
 # plot each normal vector one at a time along with the fat points associated with it
 # zz = np.linspace(np.min(Z), np.max(Z), numSlices)
@@ -332,52 +249,37 @@ yStem = np.tile(y, numSlices)
 y = np.tile(y, (numSlices, 1))
 zStem = np.ravel(thicknessByPoint)
 
-# # create "mountain" plot of fat thickness
-# fig = plt.figure()
-# ax = fig.add_subplot(2, 2, 2, projection='3d')
-# ax.plot_surface(x, y, thicknessByPoint)
-# ax.set_title('Mountain plot of fat thickness')
-# ax.set_xlabel('Slice level')
-# ax.set_ylabel('Azimuth')
-# ax.set_zlabel('Fat thickness')
-#
 # # create stem plot on same axes
-# ax = fig.add_subplot(2, 2, 4, projection='3d')
+# fig = plt.figure()
+# ax = fig.gca(projection='3d')
 # for xx, yy, zz in zip(xStem, yStem, zStem):
 #     plt.plot([xx, xx], [yy, yy], [0, zz], '-', color='yellow')
 # ax.set_title('Stem plot of fat thickness')
-# ax.set_xlabel('Slice level')
+# ax.set_xlabel('Elevation')
 # ax.set_ylabel('Azimuth')
-# ax.set_zlabel('Fat thickness')
-#
-# # plot the thickness array as a heatmap
-# fig.add_subplot(2, 2, 1)
-# plt.imshow(thicknessByPoint, cmap='hot', aspect='4.0')
-# plt.title('Fat Thickness Map')
-# plt.xlabel('Azimuth ({})'.format(numPointsPerContour))
-# plt.ylabel('Elevation ({})'.format(numSlices))
-# plt.colorbar()
+# ax.set_zlabel('Fat thickness (mm)')
+# plt.show()
 
 # might consider adjusting degree of this fit to see how it affects fidelity to input segmentations
 # wrap mode uses values from other side of array, which is what we want to see given that these thickness measurements
 # wrap around the surface of the heart
-#thicknessByPoint2 = savgol_filter(thicknessByPoint, 77, 10, mode='wrap')
+thicknessByPoint2 = savgol_filter(thicknessByPoint, 11, 7, mode='wrap')
 
-degreeU = 10
-degreeV = 2
+degreeU = 7
+degreeV = 3
 mX, mY, mZ, mTri = splineTools.mountainPlot(x, y, thicknessByPoint, degreeU, degreeV, numSlices, numPointsPerContour,
                                             fix_samples=True)
 
-for s in range(numSlices):
-    ind = indices[s]
-    thisX = X[ind, :] + (mZ[ind, :] * crossX[ind, :])
-    thisY = Y[ind, :] + (mZ[ind, :] * crossY[ind, :])
-
-    fig = plt.figure()
-    plt.plot(X[ind, :], Y[ind, :], c='blue')
-    plt.scatter(fatX[s, :], fatY[s, :], c='yellow')
-    plt.scatter(thisX, thisY, c='black')
-    plt.show()
+# for s in range(numSlices):
+#     ind = indices[s]
+#     thisX = X[ind, :] + (mZ[ind, :] * crossX[ind, :])
+#     thisY = Y[ind, :] + (mZ[ind, :] * crossY[ind, :])
+#
+#     fig = plt.figure()
+#     plt.plot(X[ind, :], Y[ind, :], c='blue')
+#     plt.scatter(fatX[s, :], fatY[s, :], c='yellow')
+#     plt.scatter(thisX, thisY, c='black')
+#     plt.show()
 
 
 mxx = np.ravel(mX)
@@ -395,16 +297,12 @@ mTris = np.concatenate((threes, mTris), axis=1)
 # p.show()
 
 # fig = plt.figure()
-# ax = fig.add_subplot(3, 1, 1)
-# plt.imshow(mZ, cmap='inferno')
-# plt.title('fat thickness mountain heat map')
-# ax = fig.add_subplot(3, 1, 2)
+# plt.title('fat thickness heat map')
 # mZ[mZ < 0] = 0
 # plt.imshow(mZ, cmap='inferno')
-# plt.title('threshold = 1')
-# ax = fig.add_subplot(3, 1, 3)
-# mZ[mZ < 2] = 0
-# plt.imshow(mZ, cmap='inferno')
+# plt.xlabel('U Parameter (Around the Heart)')
+# plt.ylabel('V Parameter (Top to Bottom)')
+# plt.colorbar(label='Fat Thickness (mm)')
 # plt.show()
 
 # fig = plt.figure()
@@ -415,7 +313,7 @@ mTris = np.concatenate((threes, mTris), axis=1)
 
 # call the fat triangulation function to create a 3D fat surface from the mountain plot
 start = time.perf_counter()
-fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 1)
+fatPolyData = splineTools.fatTriangulation(X, Y, Z, crossX, crossY, mZ, 0)
 stop = time.perf_counter()
 print(f'Fat surface generation took {stop-start} seconds')
 
@@ -445,6 +343,26 @@ resampX, resampY, resampZ, newXControl, newYControl, newZControl, numPointsPerCo
 leftX, leftY, leftZ, _, _, _, _, _, lTri = splineTools.fitSplineClosed3D(resampX, resampY, resampZ, numControlPointsU,
                                                                          numControlPointsV, degreeU, degreeV, numPointsPerContour,
                                                                          numSlices, fix_samples=True)
+
+numL = np.full((len(lTri.triangles), 1), 3)
+Ltris = np.concatenate((numL, lTri.triangles), axis=1).astype(int)
+
+numR = np.full((len(rTri.triangles), 1), 3)
+Rtris = np.concatenate((numR, rTri.triangles), axis=1).astype(int)
+
+lPoints = np.column_stack((np.ravel(leftX), np.ravel(leftY), np.ravel(leftZ)))
+rPoints = np.column_stack((np.ravel(rightX), np.ravel(rightY), np.ravel(rightZ)))
+fatPoints = np.column_stack((np.ravel(fatX), np.ravel(fatY), np.ravel(fatZ)))
+
+# plot the resulting polydata
+lPoly = pv.PolyData(lPoints, Ltris)
+rPoly = pv.PolyData(rPoints, Rtris)
+fatPoly = pv.PolyData(fatPoints)
+p = pv.Plotter()
+p.add_mesh(lPoly, color='red', pbr=True)
+p.add_mesh(rPoly, color='blue', pbr=True)
+p.add_mesh(fatPolyData, color='yellow', pbr=True)
+p.show()
 
 ########################################################################################################################
 # check for vtk model folder, and create it if it does not already exist
